@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Alert, ActivityIndicator, Modal } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Alert, ActivityIndicator, Modal, Animated, Easing } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, MapPin, CreditCard, CheckCircle, UploadCloud, RefreshCw, ChevronRight, ChevronLeft, Navigation, FileText, RefreshCcw, ShieldCheck, ChevronUp, ChevronDown } from 'lucide-react-native';
 import { useSelector, useDispatch } from 'react-redux';
@@ -54,6 +54,20 @@ export default function CheckoutScreen({ route, navigation }) {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [placedOrderDocId, setPlacedOrderDocId] = useState(null);
   const [placedOrderNumericId, setPlacedOrderNumericId] = useState(null);
+  const scaleAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (showSuccessModal) {
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        friction: 5,
+        tension: 40,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      scaleAnim.setValue(0);
+    }
+  }, [showSuccessModal, scaleAnim]);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', async () => {
@@ -150,8 +164,8 @@ export default function CheckoutScreen({ route, navigation }) {
       return;
     }
 
-    // Robust Algorithm to guarantee a purely numeric, collision-free Order ID
-    const uniqueNumericId = Date.now().toString().slice(-6) + Math.floor(1000 + Math.random() * 9000).toString();
+    // Robust Algorithm to guarantee a purely numeric, 8-digit Order ID
+    const uniqueNumericId = Math.floor(10000000 + Math.random() * 90000000).toString();
 
     // For UPI/Online — go to payment screen first
     if (paymentMethod === 'online') {
@@ -206,7 +220,7 @@ export default function CheckoutScreen({ route, navigation }) {
       // Push the order to Firebase Firestore
       const pharmacyId = quoteData ? quoteData.pharmacyId : (cartItems[0]?.medicine?.pharmacyId || null);
 
-      const uniqueNumericId = providedNumericId || (Date.now().toString().slice(-6) + Math.floor(1000 + Math.random() * 9000).toString());
+      const uniqueNumericId = providedNumericId || Math.floor(10000000 + Math.random() * 90000000).toString();
 
       const orderData = {
         userId: currentUser?.uid || 'unknown',
@@ -463,7 +477,7 @@ export default function CheckoutScreen({ route, navigation }) {
 
       <Modal visible={showSuccessModal} transparent={true} animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.successModalCard}>
+          <Animated.View style={[styles.successModalCard, { transform: [{ scale: scaleAnim }] }]}>
             <View style={styles.successIconWrap}>
               <CheckCircle color="#FFFFFF" size={44} strokeWidth={3} />
             </View>
@@ -481,7 +495,7 @@ export default function CheckoutScreen({ route, navigation }) {
             >
               <Text style={styles.trackOrderBtnText}>Track My Order</Text>
             </TouchableOpacity>
-          </View>
+          </Animated.View>
         </View>
       </Modal>
     </SafeAreaView>

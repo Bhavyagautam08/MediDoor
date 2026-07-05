@@ -7,6 +7,7 @@ import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../../firebaseConfig';
 import { loginUser } from '../../services/authService';
 import AnimatedLoader from '../../components/AnimatedLoader';
+import CustomAlert from '../../components/CustomAlert';
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
@@ -17,6 +18,10 @@ export default function LoginScreen({ navigation }) {
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+
+  const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
+  const showAlert = (title, message, type = 'error', buttons = []) => setAlertConfig({ visible: true, title, message, type, buttons });
+  const hideAlert = () => setAlertConfig(prev => ({...prev, visible: false}));
 
   useEffect(() => {
     Animated.parallel([
@@ -36,7 +41,7 @@ export default function LoginScreen({ navigation }) {
 
   const handleLogin = async () => {
     if (!email || !password) {
-      Alert.alert('Missing Fields', 'Please enter your email and password.');
+      showAlert('Missing Fields', 'Please enter your email and password.');
       return;
     }
 
@@ -65,7 +70,7 @@ export default function LoginScreen({ navigation }) {
         friendlyMessage = 'Too many failed attempts. Please try again later.';
       }
 
-      Alert.alert('Login Failed', friendlyMessage);
+      showAlert('Login Failed', friendlyMessage);
     } finally {
       setLoading(false);
     }
@@ -73,20 +78,20 @@ export default function LoginScreen({ navigation }) {
 
   const handleForgotPassword = async () => {
     if (!email) {
-      Alert.alert('Email Required', 'Please enter your registered email address in the email field first.');
+      showAlert('Email Required', 'Please enter your registered email address in the email field first.');
       return;
     }
     
     setResettingPassword(true);
     try {
       await sendPasswordResetEmail(auth, email);
-      Alert.alert('Reset Email Sent', 'If an account with this email exists, a password reset link has been sent to it.');
+      showAlert('Reset Email Sent', 'If an account with this email exists, a password reset link has been sent to it.', 'success');
     } catch (error) {
       let friendlyMessage = 'Failed to send reset email. Please try again.';
       if (error.code === 'auth/invalid-email') friendlyMessage = 'Please enter a valid email address.';
       else if (error.code === 'auth/user-not-found') friendlyMessage = 'No account found with this email.';
       
-      Alert.alert('Error', friendlyMessage);
+      showAlert('Error', friendlyMessage);
     } finally {
       setResettingPassword(false);
     }
@@ -165,6 +170,7 @@ export default function LoginScreen({ navigation }) {
 
         </ScrollView>
       </KeyboardAvoidingView>
+      <CustomAlert {...alertConfig} onClose={hideAlert} />
     </SafeAreaView>
   );
 }

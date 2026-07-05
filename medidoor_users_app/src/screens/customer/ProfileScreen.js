@@ -156,6 +156,7 @@ export default function ProfileScreen({ navigation }) {
 
   const name = userData?.name || 'Customer';
   const phone = userData?.phone || userData?.email || 'Not logged in';
+  const userId = userData?.medidoorId ? `ID: ${userData.medidoorId}` : 'ID: Pending';
 
   const renderHorizontalOption = (title, IconComponent, route) => (
     <TouchableOpacity style={styles.horizOptionCard} onPress={() => navigation.navigate(route)}>
@@ -190,7 +191,7 @@ export default function ProfileScreen({ navigation }) {
         {/* User Info */}
         <View style={styles.userInfoSection}>
           <Text style={styles.userName}>{name}</Text>
-          <Text style={styles.userPhone}>{phone}</Text>
+          <Text style={styles.userPhone}>{phone}  •  {userId}</Text>
         </View>
 
         {/* Promo Banner */}

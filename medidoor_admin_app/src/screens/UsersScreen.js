@@ -1,19 +1,30 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Alert, Modal, Image, ScrollView, Dimensions } from 'react-native';
-import { Users, User, Check, X, ShieldAlert, ShieldCheck, MapPin, FileText, X as CloseIcon } from 'lucide-react-native';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Alert, Modal, Image, ScrollView, Dimensions, TextInput } from 'react-native';
+import { Users, User, Check, X, ShieldAlert, ShieldCheck, MapPin, FileText, X as CloseIcon, Search, Store } from 'lucide-react-native';
 import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
+import ImageViewer from 'react-native-image-zoom-viewer';
 
 const { width } = Dimensions.get('window');
 
-export default function UsersScreen() {
-  const [activeTab, setActiveTab] = useState('customers');
+export default function UsersScreen({ route, navigation }) {
+  const initialTab = route?.params?.initialTab || 'customers';
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [customers, setCustomers] = useState([]);
   const [partners, setPartners] = useState([]);
+  const [pharmacies, setPharmacies] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
   
   const [viewerVisible, setViewerVisible] = useState(false);
-  const [selectedPartner, setSelectedPartner] = useState(null);
+  const [selectedItem, setSelectedItem] = useState(null);
+
+  // Sync tab if navigated from dashboard
+  useEffect(() => {
+    if (route?.params?.initialTab) {
+      setActiveTab(route.params.initialTab);
+    }
+  }, [route?.params?.initialTab]);
 
   useEffect(() => {
     const unsubCustomers = onSnapshot(collection(db, 'customers'), (snapshot) => {
@@ -26,60 +37,123 @@ export default function UsersScreen() {
       const pList = [];
       snapshot.forEach((doc) => pList.push({ id: doc.id, ...doc.data() }));
       setPartners(pList);
+    });
+
+    const unsubPharmacies = onSnapshot(collection(db, 'pharmacies'), (snapshot) => {
+      const phList = [];
+      snapshot.forEach((doc) => phList.push({ id: doc.id, ...doc.data() }));
+      setPharmacies(phList);
       setLoading(false);
     });
 
     return () => {
       unsubCustomers();
       unsubPartners();
+      unsubPharmacies();
     };
   }, []);
 
-  const handleUpdateStatus = async (id, name, isApproved) => {
+  const handleUpdateStatus = async (collectionName, id, name, status) => {
     try {
-      const docRef = doc(db, 'delivery_agents', id);
-      await updateDoc(docRef, { isApproved });
-      Alert.alert("Success", `${name} has been ${isApproved ? 'Approved' : 'Rejected/Suspended'}.`);
+      const docRef = doc(db, collectionName, id);
+      await updateDoc(docRef, { status });
+      Alert.alert("Success", `${name} has been ${status === 'approved' ? 'approved' : 'suspended'}.`);
     } catch (error) {
       console.error("Error updating partner status:", error);
       Alert.alert("Error", "Could not update status.");
     }
   };
 
-  const openDocumentViewer = (partner) => {
-    if (!partner.documents || Object.keys(partner.documents).length === 0) {
-      Alert.alert("No Documents", "This delivery partner did not upload any documents.");
-      return;
+  const openDocumentViewer = (item) => {
+    if (activeTab === 'pharmacies') {
+      if (!item.licenseUrl) {
+        Alert.alert("No Document", "This pharmacy did not upload a license document.");
+        return;
+      }
+    } else {
+      if (!item.documents || Object.keys(item.documents).length === 0) {
+        Alert.alert("No Documents", "This delivery partner did not upload any documents.");
+        return;
+      }
     }
-    setSelectedPartner(partner);
+    setSelectedItem(item);
     setViewerVisible(true);
   };
 
-  const renderCustomer = ({ item }) => (
-    <View style={styles.card}>
-      <View style={styles.header}>
-        <View style={[styles.iconWrapper, { backgroundColor: '#F59E0B20' }]}>
-          <User color="#F59E0B" size={24} />
+  const renderCustomer = ({ item }) => {
+    const isSuspended = item.status === 'suspended';
+    const displayId = item.medidoorId || item.id.slice(-8).toUpperCase();
+    
+    return (
+      <TouchableOpacity 
+        style={styles.card}
+        onPress={() => navigation.navigate('UserDetails', { userId: item.id, role: 'customers' })}
+      >
+        <View style={styles.header}>
+          <View style={[styles.iconWrapper, { backgroundColor: '#F59E0B20' }]}>
+            <User color="#F59E0B" size={24} />
+          </View>
+          <View style={styles.headerText}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={styles.name}>{item.name || 'Unnamed Customer'}</Text>
+              <Text style={styles.shortId}>#{displayId}</Text>
+            </View>
+            <View style={styles.statusRow}>
+              {isSuspended ? <ShieldAlert size={14} color="#DC2626" /> : <ShieldCheck size={14} color="#10B981" />}
+              <Text style={[styles.statusText, { color: isSuspended ? '#DC2626' : '#10B981' }]}>
+                {isSuspended ? 'Suspended' : 'Active'}
+              </Text>
+            </View>
+          </View>
         </View>
-        <View style={styles.headerText}>
-          <Text style={styles.name}>{item.name || 'Unnamed Customer'}</Text>
-          <Text style={styles.detailText}>{item.phone || item.email || 'No contact provided'}</Text>
+        
+        <View style={styles.detailRow}>
+          <Text style={styles.detailText}>Phone: {item.phone || item.email || 'No contact provided'}</Text>
         </View>
-      </View>
-    </View>
-  );
+
+        <View style={styles.actions}>
+          <View style={[styles.approvalActions, { flex: 1, justifyContent: 'flex-end' }]}>
+            {isSuspended ? (
+              <TouchableOpacity 
+                style={[styles.actionBtn, styles.approveBtn]}
+                onPress={() => handleUpdateStatus('customers', item.id, item.name, 'active')}
+              >
+                <Check color="#FFFFFF" size={16} />
+                <Text style={styles.approveBtnText}>Activate</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity 
+                style={[styles.actionBtn, styles.rejectBtn]}
+                onPress={() => handleUpdateStatus('customers', item.id, item.name, 'suspended')}
+              >
+                <X color="#DC2626" size={16} />
+                <Text style={styles.rejectBtnText}>Suspend</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   const renderPartner = ({ item }) => {
-    const isApproved = item.isApproved === true;
+    const isApproved = item.status === 'approved';
+    const displayId = item.medidoorId || item.id.slice(-8).toUpperCase();
 
     return (
-      <View style={styles.card}>
+      <TouchableOpacity 
+        style={styles.card}
+        onPress={() => navigation.navigate('UserDetails', { userId: item.id, role: 'partners' })}
+      >
         <View style={styles.header}>
           <View style={[styles.iconWrapper, { backgroundColor: '#3B82F620' }]}>
             <MapPin color="#3B82F6" size={24} />
           </View>
           <View style={styles.headerText}>
-            <Text style={styles.name}>{item.name || 'Unnamed Partner'}</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={styles.name}>{item.name || 'Unnamed Partner'}</Text>
+              <Text style={styles.shortId}>#{displayId}</Text>
+            </View>
             <View style={styles.statusRow}>
               {isApproved ? <ShieldCheck size={14} color="#10B981" /> : <ShieldAlert size={14} color="#F59E0B" />}
               <Text style={[styles.statusText, { color: isApproved ? '#10B981' : '#F59E0B' }]}>
@@ -106,7 +180,7 @@ export default function UsersScreen() {
             {!isApproved ? (
               <TouchableOpacity 
                 style={[styles.actionBtn, styles.approveBtn]}
-                onPress={() => handleUpdateStatus(item.id, item.name, true)}
+                onPress={() => handleUpdateStatus('delivery_agents', item.id, item.name, 'approved')}
               >
                 <Check color="#FFFFFF" size={16} />
                 <Text style={styles.approveBtnText}>Approve</Text>
@@ -114,7 +188,7 @@ export default function UsersScreen() {
             ) : (
               <TouchableOpacity 
                 style={[styles.actionBtn, styles.rejectBtn]}
-                onPress={() => handleUpdateStatus(item.id, item.name, false)}
+                onPress={() => handleUpdateStatus('delivery_agents', item.id, item.name, 'suspended')}
               >
                 <X color="#DC2626" size={16} />
                 <Text style={styles.rejectBtnText}>Suspend</Text>
@@ -122,11 +196,91 @@ export default function UsersScreen() {
             )}
           </View>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
-  const data = activeTab === 'customers' ? customers : partners;
+  const renderPharmacy = ({ item }) => {
+    const isApproved = item.status === 'approved';
+    const displayId = item.medidoorId || item.id.slice(-8).toUpperCase();
+
+    return (
+      <TouchableOpacity 
+        style={styles.card}
+        onPress={() => navigation.navigate('UserDetails', { userId: item.id, role: 'pharmacies' })}
+      >
+        <View style={styles.header}>
+          <View style={[styles.iconWrapper, { backgroundColor: '#8B5CF620' }]}>
+            <Store color="#8B5CF6" size={24} />
+          </View>
+          <View style={styles.headerText}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={styles.name}>{item.name}</Text>
+              <Text style={styles.shortId}>#{displayId}</Text>
+            </View>
+            <View style={styles.statusRow}>
+              {isApproved ? <ShieldCheck size={14} color="#10B981" /> : <ShieldAlert size={14} color="#F59E0B" />}
+              <Text style={[styles.statusText, { color: isApproved ? '#10B981' : '#F59E0B' }]}>
+                {isApproved ? 'Approved' : 'Pending Approval'}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.detailRow}>
+          <MapPin color="#64748B" size={16} />
+          <Text style={styles.detailText} numberOfLines={1}> {item.address}</Text>
+        </View>
+        
+        <View style={styles.detailRow}>
+          <Text style={styles.detailText}>Owner: {item.ownerName}</Text>
+        </View>
+        <View style={styles.detailRow}>
+          <Text style={styles.detailText}>Phone: {item.phone}</Text>
+        </View>
+
+        <View style={styles.actions}>
+          <TouchableOpacity 
+            style={[styles.actionBtn, styles.documentBtn]}
+            onPress={() => openDocumentViewer(item)}
+          >
+            <FileText color="#3B82F6" size={16} />
+            <Text style={styles.documentBtnText}>View License</Text>
+          </TouchableOpacity>
+
+          <View style={styles.approvalActions}>
+            {!isApproved ? (
+              <TouchableOpacity 
+                style={[styles.actionBtn, styles.approveBtn]}
+                onPress={() => handleUpdateStatus('pharmacies', item.id, item.name, 'approved')}
+              >
+                <Check color="#FFFFFF" size={16} />
+                <Text style={styles.approveBtnText}>Approve</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity 
+                style={[styles.actionBtn, styles.rejectBtn]}
+                onPress={() => handleUpdateStatus('pharmacies', item.id, item.name, 'suspended')}
+              >
+                <X color="#DC2626" size={16} />
+                <Text style={styles.rejectBtnText}>Suspend</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  const rawData = activeTab === 'customers' ? customers : activeTab === 'partners' ? partners : pharmacies;
+  const data = rawData.filter(item => {
+    const query = searchQuery.toLowerCase();
+    const searchId = (item.medidoorId || item.id.slice(-8)).toLowerCase();
+    const name = (item.name || '').toLowerCase();
+    const phone = (item.phone || '').toLowerCase();
+    const email = (item.email || '').toLowerCase();
+    return searchId.includes(query) || name.includes(query) || phone.includes(query) || email.includes(query);
+  });
 
   // Documents array formatting
   const documentLabels = {
@@ -140,8 +294,12 @@ export default function UsersScreen() {
   };
 
   const getPartnerDocuments = () => {
-    if (!selectedPartner || !selectedPartner.documents) return [];
-    return Object.entries(selectedPartner.documents).map(([key, uri]) => ({
+    if (activeTab === 'pharmacies') {
+      if (!selectedItem || !selectedItem.licenseUrl) return [];
+      return [{ title: 'Pharmacy License', uri: selectedItem.licenseUrl }];
+    }
+    if (!selectedItem || !selectedItem.documents) return [];
+    return Object.entries(selectedItem.documents).map(([key, uri]) => ({
       title: documentLabels[key] || key,
       uri
     })).filter(doc => doc.uri); // Only return docs that have a URI
@@ -150,39 +308,61 @@ export default function UsersScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.screenHeader}>
-        <Text style={styles.title}>Users & Partners</Text>
-        <Text style={styles.subtitle}>Manage all accounts on the platform</Text>
+        <Text style={styles.title}>Search</Text>
+        <Text style={styles.subtitle}>Manage all users, partners, and pharmacies</Text>
       </View>
 
       <View style={styles.tabContainer}>
         <TouchableOpacity 
           style={[styles.tab, activeTab === 'customers' && styles.activeTab]}
-          onPress={() => setActiveTab('customers')}
+          onPress={() => { setActiveTab('customers'); setSearchQuery(''); }}
         >
           <Text style={[styles.tabText, activeTab === 'customers' && styles.activeTabText]}>Customers</Text>
         </TouchableOpacity>
         <TouchableOpacity 
           style={[styles.tab, activeTab === 'partners' && styles.activeTab]}
-          onPress={() => setActiveTab('partners')}
+          onPress={() => { setActiveTab('partners'); setSearchQuery(''); }}
         >
-          <Text style={[styles.tabText, activeTab === 'partners' && styles.activeTabText]}>Delivery Partners</Text>
+          <Text style={[styles.tabText, activeTab === 'partners' && styles.activeTabText]}>Drivers</Text>
         </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.tab, activeTab === 'pharmacies' && styles.activeTab]}
+          onPress={() => { setActiveTab('pharmacies'); setSearchQuery(''); }}
+        >
+          <Text style={[styles.tabText, activeTab === 'pharmacies' && styles.activeTabText]}>Pharmacies</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.searchContainer}>
+        <Search color="#94A3B8" size={20} style={styles.searchIcon} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder={`Search ${activeTab}...`}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholderTextColor="#94A3B8"
+        />
       </View>
 
       {loading ? (
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color="#0F172A" />
         </View>
+      ) : searchQuery.trim().length === 0 ? (
+        <View style={styles.centerContainer}>
+          <Search color="#CBD5E1" size={48} />
+          <Text style={styles.emptyText}>Type a name, ID, or phone to search</Text>
+        </View>
       ) : data.length === 0 ? (
         <View style={styles.centerContainer}>
           <Users color="#CBD5E1" size={48} />
-          <Text style={styles.emptyText}>No {activeTab} found.</Text>
+          <Text style={styles.emptyText}>No matches found.</Text>
         </View>
       ) : (
         <FlatList
           data={data}
           keyExtractor={(item) => item.id}
-          renderItem={activeTab === 'customers' ? renderCustomer : renderPartner}
+          renderItem={activeTab === 'customers' ? renderCustomer : activeTab === 'partners' ? renderPartner : renderPharmacy}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
         />
@@ -191,45 +371,33 @@ export default function UsersScreen() {
       <Modal
         visible={viewerVisible}
         transparent={true}
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setViewerVisible(false)}
       >
         <View style={styles.modalBackground}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>{selectedPartner?.name} - Documents</Text>
+            <Text style={styles.modalTitle}>{selectedItem?.name} - {activeTab === 'pharmacies' ? 'License' : 'Documents'}</Text>
             <TouchableOpacity onPress={() => setViewerVisible(false)} style={styles.closeBtn}>
               <CloseIcon color="#FFFFFF" size={24} />
             </TouchableOpacity>
           </View>
           
-          <ScrollView 
-            horizontal 
-            pagingEnabled 
-            showsHorizontalScrollIndicator={false}
-            style={styles.modalScroll}
-          >
-            {getPartnerDocuments().map((doc, index) => (
-              <View key={index} style={styles.documentSlide}>
-                <Text style={styles.documentTitle}>{doc.title}</Text>
-                {doc.uri.startsWith('file://') ? (
-                  <View style={styles.fallbackContainer}>
-                    <ShieldAlert color="#FCA5A5" size={64} style={{ marginBottom: 16 }} />
-                    <Text style={styles.fallbackTitle}>Local Image</Text>
-                    <Text style={styles.fallbackText}>
-                      Saved as a local path ({doc.uri}) on the user's device. Cloud storage upload is pending implementation.
+          <View style={{ flex: 1 }}>
+            {getPartnerDocuments().length > 0 && (
+              <ImageViewer
+                imageUrls={getPartnerDocuments().map(doc => ({ url: doc.uri }))}
+                enableSwipeDown={true}
+                onSwipeDown={() => setViewerVisible(false)}
+                renderIndicator={(currentIndex, allSize) => (
+                  <View style={styles.indicatorContainer}>
+                    <Text style={styles.indicatorText}>
+                      {getPartnerDocuments()[currentIndex - 1]?.title} ({currentIndex}/{allSize})
                     </Text>
                   </View>
-                ) : (
-                  <Image 
-                    source={{ uri: doc.uri }} 
-                    style={styles.fullScreenImage} 
-                    resizeMode="contain"
-                  />
                 )}
-              </View>
-            ))}
-          </ScrollView>
-          <Text style={styles.swipeHint}>Swipe left/right to view more documents</Text>
+              />
+            )}
+          </View>
         </View>
       </Modal>
     </View>
@@ -261,9 +429,28 @@ const styles = StyleSheet.create({
   tabContainer: {
     flexDirection: 'row',
     padding: 16,
+    paddingBottom: 8,
     backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: '#0F172A',
   },
   tab: {
     flex: 1,
@@ -328,6 +515,18 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: '#0F172A',
+    marginBottom: 4,
+    flex: 1,
+  },
+  shortId: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#94A3B8',
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginLeft: 8,
     marginBottom: 4,
   },
   detailRow: {
@@ -464,5 +663,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 22,
+  },
+  indicatorContainer: {
+    position: 'absolute',
+    top: 20,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 99,
+  },
+  indicatorText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
   }
 });

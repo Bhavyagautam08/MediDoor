@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { TrendingUp, Package, Star, Clock } from 'lucide-react-native';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { db, auth } from '../../firebaseConfig';
 import { calculateDistance } from '../../utils/distance';
 
@@ -19,6 +19,7 @@ const getEarning = (order) => {
 export default function EarningsScreen() {
   const [deliveries, setDeliveries] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [riderProfile, setRiderProfile] = useState(null);
 
   const handleWithdraw = () => {
     Alert.alert(
@@ -30,6 +31,38 @@ export default function EarningsScreen() {
           text: 'Confirm Withdraw',
           style: 'default',
           onPress: () => Alert.alert('Success', 'Your payout request has been initiated. Funds will reflect in 1-2 business days.')
+        }
+      ]
+    );
+  };
+
+  const handleDepositCash = () => {
+    const cash = riderProfile?.floatingCash || 0;
+    if (cash === 0) {
+      Alert.alert('No Dues', 'You have no floating cash to deposit.');
+      return;
+    }
+    
+    Alert.alert(
+      'Deposit Cash',
+      `You are holding ₹${cash} in COD collections. Do you want to pay this to the admin now?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Pay via UPI',
+          style: 'default',
+          onPress: async () => {
+            try {
+              if (auth.currentUser) {
+                await updateDoc(doc(db, 'delivery_agents', auth.currentUser.uid), {
+                  floatingCash: 0
+                });
+                Alert.alert('Payment Successful', 'Floating cash deposited successfully. Your limit is cleared!');
+              }
+            } catch (error) {
+              Alert.alert('Error', 'Payment failed.');
+            }
+          }
         }
       ]
     );
@@ -54,7 +87,16 @@ export default function EarningsScreen() {
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    const profileUnsub = onSnapshot(doc(db, 'delivery_agents', currentUser.uid), (docSnap) => {
+      if (docSnap.exists()) {
+        setRiderProfile(docSnap.data());
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      profileUnsub();
+    };
   }, []);
 
   // Time-based grouping
@@ -98,6 +140,16 @@ export default function EarningsScreen() {
           <TouchableOpacity style={styles.withdrawBtn} onPress={handleWithdraw}>
             <Text style={styles.withdrawBtnText}>Withdraw Funds</Text>
           </TouchableOpacity>
+
+          {(riderProfile?.floatingCash || 0) > 0 && (
+            <View style={{ backgroundColor: '#FEF2F2', padding: 16, borderRadius: 16, marginBottom: 24, width: '100%', elevation: 4 }}>
+              <Text style={{ color: '#991B1B', fontWeight: 'bold', fontSize: 16, marginBottom: 4 }}>Floating Cash: ₹{riderProfile.floatingCash}</Text>
+              <Text style={{ color: '#7F1D1D', fontSize: 12, marginBottom: 12 }}>You are holding COD cash. If this exceeds ₹2,000, your account will be blocked from receiving orders.</Text>
+              <TouchableOpacity style={{ backgroundColor: '#EF4444', paddingVertical: 12, borderRadius: 10, alignItems: 'center' }} onPress={handleDepositCash}>
+                <Text style={{ color: '#fff', fontWeight: 'bold' }}>Deposit Cash (Pay Admin)</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Period Cards */}
           <View style={styles.periodRow}>

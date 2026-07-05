@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, SafeAreaView,
-  Platform, ActivityIndicator, Alert, Image, TextInput, Modal
+  Platform, ActivityIndicator, Alert, Image, TextInput, Modal, BackHandler
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Navigation, MapPin, CheckCircle, Clock, Package, IndianRupee, Search, ShieldCheck, Star } from 'lucide-react-native';
@@ -126,10 +126,36 @@ export default function DeliveryDashboardScreen({ navigation }) {
   // Live Location Tracking (Compulsory)
   useEffect(() => {
     let locationSubscription = null;
+    let checkInterval = null;
+
+    const enforceLocation = async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Location Required',
+          'Delivery Partners must grant location access.',
+          [{ text: 'Exit App', onPress: () => BackHandler.exitApp() }],
+          { cancelable: false }
+        );
+        return false;
+      }
+      
+      const provider = await Location.getProviderStatusAsync();
+      if (!provider.locationServicesEnabled) {
+        Alert.alert(
+          'GPS Disabled',
+          'Your GPS is currently turned off. Location services are mandatory for delivery tracking.',
+          [{ text: 'Exit App', onPress: () => BackHandler.exitApp() }],
+          { cancelable: false }
+        );
+        return false;
+      }
+      return true;
+    };
 
     const startTracking = async () => {
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
+      const isAllowed = await enforceLocation();
+      if (!isAllowed) return;
 
       locationSubscription = await Location.watchPositionAsync(
         {
@@ -167,9 +193,25 @@ export default function DeliveryDashboardScreen({ navigation }) {
 
     startTracking();
 
+    // Continuously monitor GPS status every 10 seconds
+    checkInterval = setInterval(async () => {
+      const provider = await Location.getProviderStatusAsync();
+      if (!provider.locationServicesEnabled) {
+        Alert.alert(
+          'GPS Signal Lost',
+          'Your GPS was turned off. The app will now close for security reasons.',
+          [{ text: 'Exit App', onPress: () => BackHandler.exitApp() }],
+          { cancelable: false }
+        );
+      }
+    }, 10000);
+
     return () => {
       if (locationSubscription) {
         locationSubscription.remove();
+      }
+      if (checkInterval) {
+        clearInterval(checkInterval);
       }
     };
   }, [myActiveOrders.length, currentUser]);
@@ -221,11 +263,28 @@ export default function DeliveryDashboardScreen({ navigation }) {
       return;
     }
     try {
+      const earning = getEarning(order);
+      let cashOwed = 0;
+      
+      if (order.paymentMethod === 'cod') {
+        const total = order.totalAmount || 0;
+        cashOwed = total - earning;
+        if (cashOwed < 0) cashOwed = 0; 
+      }
+      
       await updateDoc(doc(db, 'orders', order.id), {
         status: 'Delivered',
         deliveredAt: Date.now()
       });
-      const earning = getEarning(order);
+
+      if (cashOwed > 0 && currentUser) {
+        const newFloatingCash = (riderProfile?.floatingCash || 0) + cashOwed;
+        await updateDoc(doc(db, 'delivery_agents', currentUser.uid), {
+          floatingCash: newFloatingCash
+        });
+        setRiderProfile(prev => ({ ...prev, floatingCash: newFloatingCash }));
+      }
+      
       Alert.alert('✅ Delivery Complete!', `Great job! ₹${earning} added to your earnings.`);
     } catch (e) {
       console.error(e);
@@ -519,6 +578,25 @@ export default function DeliveryDashboardScreen({ navigation }) {
           </View>
         </View>
       </Modal>
+
+      {/* Floating Cash Blocker Overlay */}
+      {riderProfile?.floatingCash >= 2000 && (
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.95)', zIndex: 9999, justifyContent: 'center', alignItems: 'center', padding: 32 }]}>
+          <View style={{ backgroundColor: '#FEF2F2', padding: 24, borderRadius: 24, alignItems: 'center', width: '100%' }}>
+            <Text style={{ fontSize: 60, marginBottom: 12 }}>⚠️</Text>
+            <Text style={{ fontSize: 24, fontWeight: '900', color: '#991B1B', textAlign: 'center', marginBottom: 8 }}>Limit Exceeded</Text>
+            <Text style={{ fontSize: 16, color: '#7F1D1D', textAlign: 'center', marginBottom: 24, lineHeight: 24 }}>
+              You are currently holding <Text style={{fontWeight: 'bold'}}>₹{riderProfile.floatingCash}</Text> in Cash on Delivery (COD) funds. The maximum allowed limit is ₹2,000.
+            </Text>
+            <TouchableOpacity 
+              style={{ backgroundColor: '#EF4444', width: '100%', paddingVertical: 16, borderRadius: 16, alignItems: 'center' }}
+              onPress={() => navigation.navigate('Earnings')}
+            >
+              <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>Deposit Cash to Continue</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }

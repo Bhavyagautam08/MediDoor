@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator, Image, BackHandler, ToastAndroid, Platform, Modal } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bell, Search, FileText, Star, UploadCloud, MapPin, ChevronRight, ChevronDown, House, ShoppingCart, CheckCircle } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSelector, useDispatch } from 'react-redux';
 import { addToCart } from '../../store/slices/cartSlice';
 import { auth, db } from '../../firebaseConfig';
@@ -20,6 +21,7 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
 };
 
 export default function HomeScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const categories = ['All', 'Chronic', 'OTC', 'Digestion', 'First Aid', 'Supplements', 'Baby Care'];
   const symptoms = ['Fever', 'Cough', 'Acidity', 'Back Pain', 'Hair Care'];
 
@@ -157,23 +159,63 @@ export default function HomeScreen({ navigation }) {
         invSnap.forEach(doc => inv.push({ id: doc.id, ...doc.data() }));
         setAllInventory(inv);
 
+        let userLat = null;
+        let userLon = null;
+
+        if (hasAddress && defaultAddressCoords) {
+          userLat = defaultAddressCoords.latitude;
+          userLon = defaultAddressCoords.longitude;
+        } else if (locationCoords) {
+          userLat = locationCoords.latitude;
+          userLon = locationCoords.longitude;
+        }
+
+        // Gather all pharmacy destinations for a single Google Maps API call
+        const validPharmacies = pharms.filter(p => p.latitude && p.longitude);
+        const destinations = validPharmacies.map(p => `${p.latitude},${p.longitude}`).join('|');
+        
+        let distancesMap = {};
+
+        if (userLat && userLon && destinations.length > 0) {
+          const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+          const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${userLat},${userLon}&destinations=${destinations}&key=${API_KEY}`;
+          
+          try {
+            const res = await fetch(url);
+            const data = await res.json();
+            
+            if (data.status === 'OK' && data.rows && data.rows[0]) {
+              const elements = data.rows[0].elements;
+              validPharmacies.forEach((p, index) => {
+                const element = elements[index];
+                if (element && element.status === 'OK') {
+                  const distKm = element.distance.value / 1000;
+                  distancesMap[p.id] = `${distKm.toFixed(1)} km`;
+                }
+              });
+            }
+          } catch (apiErr) {
+            console.warn("Maps API error on Home Screen:", apiErr);
+          }
+        }
+
         const updatedPharmacies = pharms.map(p => {
-          let dynamicDist = p.dist || '? km';
-          const pLat = p.latitude || 28.5355;
-          const pLon = p.longitude || 77.3910;
-
-          let userLat = locationCoords?.latitude;
-          let userLon = locationCoords?.longitude;
-
-          if (!userLat && hasAddress && defaultAddressCoords) {
-            userLat = defaultAddressCoords.latitude;
-            userLon = defaultAddressCoords.longitude;
+          let dynamicDist = distancesMap[p.id];
+          
+          if (!dynamicDist) {
+            // Fallback to Haversine if Maps API fails or coordinates are missing for the batch
+            const pLat = p.latitude;
+            const pLon = p.longitude;
+            if (userLat && userLon && pLat && pLon) {
+              const calculatedKm = calculateDistance(userLat, userLon, pLat, pLon);
+              dynamicDist = `${calculatedKm.toFixed(1)} km`;
+            } else if (p.dist) {
+               dynamicDist = p.dist;
+            } else {
+               dynamicDist = 'Unknown';
+            }
           }
-
-          if (userLat && userLon) {
-            const calculatedKm = calculateDistance(userLat, userLon, pLat, pLon);
-            dynamicDist = `${calculatedKm.toFixed(1)} km`;
-          }
+          
           return { ...p, calculatedDist: dynamicDist, numericDist: parseFloat(dynamicDist) || 999 };
         });
 
@@ -309,35 +351,38 @@ export default function HomeScreen({ navigation }) {
   scoredResults.sort((a, b) => a.score - b.score);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
-        <View style={styles.header}>
-          <View style={{ flex: 1, paddingRight: 16 }}>
-            <TouchableOpacity onPress={() => setShowLocationSheet(true)} style={styles.locationSelector}>
-              <House color="#EA580C" size={20} style={{ marginRight: 6 }} />
-              <Text style={styles.greeting}>{selectedAddress ? selectedAddress.tag : 'Home'} </Text>
-              <ChevronDown color="#111827" size={18} />
-            </TouchableOpacity>
-            <View style={styles.locationRow}>
-              <Text style={styles.subtitle} numberOfLines={1}>
-                {selectedAddress ? selectedAddress.text : (userLocation ? 'Using Live GPS Location' : 'Find your medicines today')}
-              </Text>
+    <SafeAreaView style={styles.container} edges={['right', 'bottom', 'left']}>
+      <ScrollView contentContainerStyle={{ paddingBottom: 40, backgroundColor: '#F9FAFB' }}>
+        <LinearGradient colors={['#00C853', '#1565C0']} style={[styles.heroSection, { paddingTop: insets.top }]}>
+          <View style={styles.header}>
+            <View style={{ flex: 1, paddingRight: 16 }}>
+              <TouchableOpacity onPress={() => setShowLocationSheet(true)} style={styles.locationSelector}>
+                <House color="#FFFFFF" size={20} style={{ marginRight: 6 }} />
+                <Text style={styles.greeting}>{selectedAddress ? selectedAddress.tag : 'Home'} </Text>
+                <ChevronDown color="#FFFFFF" size={18} />
+              </TouchableOpacity>
+              <View style={styles.locationRow}>
+                <Text style={styles.subtitle} numberOfLines={1}>
+                  {selectedAddress ? selectedAddress.text : (userLocation ? 'Using Live GPS Location' : 'Find your medicines today')}
+                </Text>
+              </View>
             </View>
+            <TouchableOpacity style={styles.bellBtn} onPress={() => navigation.navigate('Notifications')}>
+              <Bell color="#00C853" size={24} />
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity style={styles.bellBtn} onPress={() => navigation.navigate('Notifications')}>
-            <Bell color="#111827" size={24} />
-          </TouchableOpacity>
-        </View>
 
-        <View style={styles.searchBox}>
-          <Search color="#6B7280" size={20} style={{ marginRight: 8 }} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search by medicine, salt, or symptom..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-        </View>
+          <View style={styles.glassSearchBox}>
+            <Search color="#FFFFFF" size={20} style={{ marginRight: 8, opacity: 0.8 }} />
+            <TextInput
+              style={styles.glassSearchInput}
+              placeholder="Search by medicine, salt, or symptom..."
+              placeholderTextColor="rgba(255,255,255,0.7)"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+          </View>
+        </LinearGradient>
 
         {(searchQuery.trim().length > 0 || activeCategory !== 'All') ? (
           <View style={{ paddingHorizontal: 24 }}>
@@ -414,19 +459,19 @@ export default function HomeScreen({ navigation }) {
           </View>
         ) : (
           <>
-            <View style={styles.uploadCard}>
+            <LinearGradient colors={['#1E3A8A', '#312E81']} style={styles.uploadCard}>
               <View style={{ flex: 1, zIndex: 2 }}>
                 <Text style={styles.uploadTitle}>Quick Upload</Text>
                 <Text style={styles.uploadDesc}>Upload your prescription and we'll find the medicines for you.</Text>
                 <TouchableOpacity style={styles.uploadButton} onPress={() => navigation.navigate('UploadPrescription')}>
-                  <UploadCloud color="#fff" size={14} style={{ marginRight: 6 }} />
+                  <UploadCloud color="#1E3A8A" size={16} style={{ marginRight: 6 }} />
                   <Text style={styles.uploadButtonText}>Upload Prescription</Text>
                 </TouchableOpacity>
               </View>
               <View style={styles.uploadIconWrap}>
-                <FileText color="#1E3A8A" size={64} opacity={0.3} />
+                <FileText color="#FFFFFF" size={80} opacity={0.15} />
               </View>
-            </View>
+            </LinearGradient>
 
             <Text style={styles.sectionTitle}>Categories</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryRow}>
@@ -517,40 +562,41 @@ export default function HomeScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F9FAFB' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, paddingBottom: 16 },
+  heroSection: { paddingBottom: 32, borderBottomLeftRadius: 32, borderBottomRightRadius: 32, marginBottom: 10, elevation: 5, shadowColor: '#00C853', shadowOpacity: 0.3, shadowRadius: 10 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, paddingTop: 16 },
   locationSelector: { flexDirection: 'row', alignItems: 'center' },
-  greeting: { fontSize: 20, fontWeight: 'bold', color: '#111827' },
+  greeting: { fontSize: 22, fontWeight: '900', color: '#FFFFFF' },
   locationRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
-  subtitle: { fontSize: 13, color: '#6B7280', flex: 1 },
-  bellBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center', elevation: 2, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4 },
-  searchBox: { flexDirection: 'row', backgroundColor: '#fff', marginHorizontal: 24, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 14, alignItems: 'center', marginBottom: 16, elevation: 1, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 2, borderWidth: 1, borderColor: '#F3F4F6' },
-  searchInput: { flex: 1, fontSize: 14, color: '#111827' },
-  uploadCard: { backgroundColor: '#2563EB', marginHorizontal: 24, borderRadius: 20, padding: 24, flexDirection: 'row', marginBottom: 28, overflow: 'hidden' },
-  uploadTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 8 },
-  uploadDesc: { color: '#BFDBFE', fontSize: 12, marginBottom: 16, lineHeight: 18 },
-  uploadButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#00C853', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10, alignSelf: 'flex-start' },
-  uploadButtonText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 12 },
+  subtitle: { fontSize: 13, color: 'rgba(255,255,255,0.9)', flex: 1 },
+  bellBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', elevation: 4, shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 8 },
+  glassSearchBox: { flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.2)', marginHorizontal: 24, borderRadius: 16, paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' },
+  glassSearchInput: { flex: 1, fontSize: 15, color: '#FFFFFF', fontWeight: '500' },
+  uploadCard: { marginHorizontal: 24, borderRadius: 24, padding: 24, flexDirection: 'row', marginBottom: 28, overflow: 'hidden', elevation: 8, shadowColor: '#1E3A8A', shadowOpacity: 0.3, shadowRadius: 12, marginTop: 16 },
+  uploadTitle: { color: '#fff', fontSize: 20, fontWeight: '900', marginBottom: 8 },
+  uploadDesc: { color: '#BFDBFE', fontSize: 13, marginBottom: 16, lineHeight: 20 },
+  uploadButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12, alignSelf: 'flex-start' },
+  uploadButtonText: { color: '#1E3A8A', fontWeight: '900', fontSize: 13 },
   uploadIconWrap: { position: 'absolute', right: -10, bottom: -10, zIndex: 1 },
   sectionTitle: { fontSize: 17, fontWeight: 'bold', color: '#111827', marginLeft: 24, marginBottom: 14 },
   categoryRow: { paddingLeft: 24, marginBottom: 24 },
-  categoryChip: { backgroundColor: '#F3F4F6', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 20, marginRight: 10, alignItems: 'center', justifyContent: 'center' },
-  categoryChipActive: { backgroundColor: '#111827' },
-  categoryText: { color: '#374151', fontSize: 14, fontWeight: '500' },
+  categoryChip: { backgroundColor: '#FFFFFF', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 20, marginRight: 10, alignItems: 'center', justifyContent: 'center', elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, borderWidth: 1, borderColor: '#F3F4F6' },
+  categoryChipActive: { backgroundColor: '#111827', borderColor: '#111827' },
+  categoryText: { color: '#374151', fontSize: 14, fontWeight: '600' },
   categoryTextActive: { color: '#fff', fontWeight: 'bold' },
   sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 24, marginBottom: 16, alignItems: 'center' },
-  sectionTitleRow: { fontSize: 17, fontWeight: 'bold', color: '#111827' },
+  sectionTitleRow: { fontSize: 18, fontWeight: '900', color: '#111827' },
   seeAllText: { fontSize: 14, fontWeight: 'bold', color: '#00C853' },
   pharmacyRow: { paddingLeft: 24, paddingBottom: 16 },
-  pharmacyCard: { backgroundColor: '#FFFFFF', borderRadius: 16, width: 220, marginRight: 16, elevation: 2, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 5 },
-  pharmacyImagePlaceholder: { height: 120, width: '100%', backgroundColor: '#E0F2FE', borderTopLeftRadius: 16, borderTopRightRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  pharmacyEmoji: { fontSize: 44 },
-  pharmacyCardContent: { padding: 12 },
+  pharmacyCard: { backgroundColor: '#FFFFFF', borderRadius: 20, width: 220, marginRight: 16, elevation: 4, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 8, overflow: 'hidden' },
+  pharmacyImagePlaceholder: { height: 120, width: '100%', backgroundColor: '#E0F2FE', alignItems: 'center', justifyContent: 'center' },
+  pharmacyEmoji: { fontSize: 50 },
+  pharmacyCardContent: { padding: 16 },
   pharmacyCardTitle: { fontSize: 14, fontWeight: 'bold', color: '#111827', flex: 1 },
   openBadge: { backgroundColor: '#D1FAE5', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
   openText: { fontSize: 10, color: '#065F46', fontWeight: 'bold' },
   ratingRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
   ratingDistText: { fontSize: 12, color: '#4B5563', fontWeight: '600' },
-  searchResultCard: { backgroundColor: '#fff', padding: 16, borderRadius: 16, marginBottom: 16, elevation: 3, shadowColor: '#000', shadowOpacity: 0.06, shadowOffset: {width: 0, height: 4}, shadowRadius: 8, borderWidth: 1, borderColor: '#F3F4F6' },
+  searchResultCard: { backgroundColor: '#fff', padding: 16, borderRadius: 20, marginBottom: 16, elevation: 4, shadowColor: '#000', shadowOpacity: 0.08, shadowOffset: {width: 0, height: 6}, shadowRadius: 12, borderWidth: 1, borderColor: '#F3F4F6' },
   cardHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 },
   cardFooterRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   searchItemName: { fontSize: 17, fontWeight: '800', color: '#111827', marginBottom: 2 },
@@ -563,8 +609,8 @@ const styles = StyleSheet.create({
   addToCartTxt: { color: '#fff', fontSize: 13, fontWeight: '900' },
   
   // New Styles
-  recommendedCard: { borderColor: '#10B981', borderWidth: 2, backgroundColor: '#F0FDF4' },
-  recommendationBadge: { flexDirection: 'row', alignSelf: 'flex-start', backgroundColor: '#10B981', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, alignItems: 'center', marginBottom: 12 },
+  recommendedCard: { borderColor: '#10B981', borderWidth: 2, backgroundColor: '#F0FDF4', shadowColor: '#10B981', shadowOpacity: 0.15 },
+  recommendationBadge: { flexDirection: 'row', alignSelf: 'flex-start', backgroundColor: '#10B981', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, alignItems: 'center', marginBottom: 12 },
   recommendationText: { color: '#FFFFFF', fontSize: 10, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 0.5 },
   toastOverlay: { flex: 1, justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 50 },
   toastContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', paddingHorizontal: 20, paddingVertical: 14, borderRadius: 30, elevation: 5, shadowColor: '#000', shadowOpacity: 0.15, shadowOffset: {width: 0, height: 4}, shadowRadius: 10 },

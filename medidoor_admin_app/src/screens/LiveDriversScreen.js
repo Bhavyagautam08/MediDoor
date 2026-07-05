@@ -9,23 +9,17 @@ const { width, height } = Dimensions.get('window');
 
 export default function LiveDriversScreen() {
   const [drivers, setDrivers] = useState([]);
+  const [allDriversData, setAllDriversData] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Listen to delivery agents who have a live location
     const q = query(collection(db, 'delivery_agents'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const activeDrivers = [];
+      const fetched = [];
       snapshot.forEach((doc) => {
-        const data = doc.data();
-        if (data.liveLocation && data.liveLocation.latitude) {
-          activeDrivers.push({
-            id: doc.id,
-            ...data
-          });
-        }
+        fetched.push({ id: doc.id, ...doc.data() });
       });
-      setDrivers(activeDrivers);
+      setAllDriversData(fetched);
       setLoading(false);
     }, (error) => {
       console.error("Error fetching drivers:", error);
@@ -34,6 +28,23 @@ export default function LiveDriversScreen() {
 
     return () => unsubscribe();
   }, []);
+
+  // Heartbeat checker: Filter out drivers whose GPS hasn't updated in 2 minutes
+  useEffect(() => {
+    const filterActive = () => {
+      const now = Date.now();
+      const active = allDriversData.filter(d => {
+        if (!d.liveLocation || !d.liveLocation.latitude || !d.lastActive) return false;
+        // 120,000 ms = 2 minutes
+        return (now - d.lastActive) <= 120000;
+      });
+      setDrivers(active);
+    };
+    
+    filterActive();
+    const interval = setInterval(filterActive, 30000); // Re-check every 30 seconds
+    return () => clearInterval(interval);
+  }, [allDriversData]);
 
   if (loading) {
     return (

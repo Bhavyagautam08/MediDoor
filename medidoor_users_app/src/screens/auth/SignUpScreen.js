@@ -4,9 +4,43 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Eye, EyeOff, Camera, MapPin, ChevronLeft, CheckCircle2 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { storage } from '../../firebaseConfig';
 import { registerUser } from '../../services/authService';
 import MapPickerModal from '../../components/MapPickerModal';
+import CustomAlert from '../../components/CustomAlert';
 import AnimatedLoader from '../../components/AnimatedLoader';
+
+const uploadImageToStorage = async (uri, folderPath) => {
+  if (!uri || uri.startsWith('http')) return uri;
+  
+  try {
+    const filename = `file_${Date.now()}.jpg`;
+    const bucket = storage.app.options.storageBucket;
+    
+    // Use Firebase REST API to bypass React Native Blob completely
+    const uploadUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o?name=${encodeURIComponent(folderPath + '/' + filename)}`;
+
+    const response = await FileSystem.uploadAsync(uploadUrl, uri, {
+      httpMethod: 'POST',
+      uploadType: 0, // 0 = BINARY_CONTENT
+      headers: {
+        'Content-Type': 'image/jpeg',
+      }
+    });
+
+    if (response.status !== 200) {
+      throw new Error(`Server returned ${response.status}: ${response.body}`);
+    }
+
+    const data = JSON.parse(response.body);
+    return `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(folderPath + '/' + filename)}?alt=media&token=${data.downloadTokens}`;
+  } catch (error) {
+    console.error('Error uploading image to storage:', error);
+    throw new Error('Failed to upload image. Please check your internet connection and try again.');
+  }
+};
 
 export default function SignUpScreen({ route, navigation }) {
   const selectedRole = route.params?.role || 'Customer';
@@ -21,6 +55,10 @@ export default function SignUpScreen({ route, navigation }) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const [alertConfig, setAlertConfig] = useState({ visible: false, title: '', message: '', type: 'info', buttons: [] });
+  const showAlert = (title, message, type = 'error', buttons = []) => setAlertConfig({ visible: true, title, message, type, buttons });
+  const hideAlert = () => setAlertConfig(prev => ({...prev, visible: false}));
 
   // Pharmacy specific
   const [pharmacyName, setPharmacyName] = useState('');
@@ -60,11 +98,19 @@ export default function SignUpScreen({ route, navigation }) {
 
   const handleNextStep = () => {
     if (!name || !email || !phone || !password) {
-      Alert.alert('Missing Fields', 'Please fill in all the basic details.');
+      showAlert('Missing Fields', 'Please fill in all the basic details.');
+      return;
+    }
+    if (!/^\d{10}$/.test(phone)) {
+      showAlert('Invalid Phone', 'Please enter a valid 10-digit phone number.');
+      return;
+    }
+    if (!email.toLowerCase().endsWith('@gmail.com')) {
+      showAlert('Invalid Email', 'Please use a valid @gmail.com email address.');
       return;
     }
     if (password.length < 6) {
-      Alert.alert('Weak Password', 'Password should be at least 6 characters long.');
+      showAlert('Weak Password', 'Password should be at least 6 characters long.');
       return;
     }
     
@@ -76,44 +122,59 @@ export default function SignUpScreen({ route, navigation }) {
     // Validation for Pharmacy Admin and Customer (Step 1 submit)
     if (step === 1 && selectedRole !== 'Delivery Agent') {
       if (!name || !email || !phone || !password) {
-        Alert.alert('Missing Fields', 'Please fill in all the basic details.');
+        showAlert('Missing Fields', 'Please fill in all the basic details.');
+        return;
+      }
+      if (!/^\d{10}$/.test(phone)) {
+        showAlert('Invalid Phone', 'Please enter a valid 10-digit phone number.');
+        return;
+      }
+      if (!email.toLowerCase().endsWith('@gmail.com')) {
+        showAlert('Invalid Email', 'Please use a valid @gmail.com email address.');
         return;
       }
       
       if (selectedRole === 'Pharmacy Admin') {
         if (!pharmacyName || !pharmacyAddress) {
-          Alert.alert('Missing Fields', 'Please provide your Pharmacy Name and Address.');
+          showAlert('Missing Fields', 'Please provide your Pharmacy Name and Address.');
           return;
         }
         if (!licenseUri) {
-          Alert.alert('License Required', 'Please upload your pharmacy license to proceed. This is required for verification.');
+          showAlert('License Required', 'Please upload your pharmacy license to proceed. This is required for verification.');
           return;
         }
       }
 
       if (password.length < 6) {
-        Alert.alert('Weak Password', 'Password should be at least 6 characters long.');
+        showAlert('Weak Password', 'Password should be at least 6 characters long.');
         return;
       }
     }
 
     // Validation for Delivery Agent (Step 2 submit)
     if (step === 2 && selectedRole === 'Delivery Agent') {
-      if (!aadhaarUri || !panUri || !dlUri || !rcUri || !insuranceUri || !bankUri || !photoUri) {
-        Alert.alert('Missing Documents', 'Please upload all the required documents to proceed.');
+      if (!aadhaarUri || !panUri || !dlUri || !rcUri || !bankUri || !photoUri) {
+        showAlert('Missing Documents', 'Please upload all the mandatory documents to proceed.');
         return;
       }
     }
 
     setLoading(true);
     try {
-      const additionalData = { name, phone };
+      const generatedId = Math.floor(10000000 + Math.random() * 90000000).toString();
+      const additionalData = { name, phone, medidoorId: generatedId };
       
       if (selectedRole === 'Pharmacy Admin') {
         if (!pharmacyLat || !pharmacyLng) {
-          Alert.alert('Location Required', 'Please select your pharmacy location on the map.');
+          showAlert('Location Required', 'Please select your pharmacy location on the map.');
           setLoading(false);
           return;
+        }
+
+        // Upload Pharmacy License
+        let uploadedLicenseUrl = '';
+        if (licenseUri) {
+          uploadedLicenseUrl = await uploadImageToStorage(licenseUri, 'pharmacy_licenses');
         }
 
         additionalData.name = pharmacyName;
@@ -121,17 +182,28 @@ export default function SignUpScreen({ route, navigation }) {
         additionalData.address = pharmacyAddress;
         additionalData.latitude = pharmacyLat;
         additionalData.longitude = pharmacyLng;
-        additionalData.licenseUrl = licenseUri || '';
+        additionalData.licenseUrl = uploadedLicenseUrl;
         additionalData.status = 'pending'; // requires admin approval
       } else if (selectedRole === 'Delivery Agent') {
+        // Upload all delivery agent documents concurrently
+        const uploadedDocs = await Promise.all([
+          uploadImageToStorage(aadhaarUri, 'delivery_documents/aadhaar'),
+          uploadImageToStorage(panUri, 'delivery_documents/pan'),
+          uploadImageToStorage(dlUri, 'delivery_documents/dl'),
+          uploadImageToStorage(rcUri, 'delivery_documents/rc'),
+          insuranceUri ? uploadImageToStorage(insuranceUri, 'delivery_documents/insurance') : Promise.resolve(null),
+          uploadImageToStorage(bankUri, 'delivery_documents/bank'),
+          uploadImageToStorage(photoUri, 'delivery_documents/photo')
+        ]);
+
         additionalData.documents = {
-          aadhaar: aadhaarUri,
-          pan: panUri,
-          dl: dlUri,
-          rc: rcUri,
-          insurance: insuranceUri,
-          bank: bankUri,
-          photo: photoUri
+          aadhaar: uploadedDocs[0],
+          pan: uploadedDocs[1],
+          dl: uploadedDocs[2],
+          rc: uploadedDocs[3],
+          insurance: uploadedDocs[4],
+          bank: uploadedDocs[5],
+          photo: uploadedDocs[6]
         };
         additionalData.status = 'pending'; // requires admin approval
       }
@@ -140,13 +212,14 @@ export default function SignUpScreen({ route, navigation }) {
       
       if (selectedRole === 'Pharmacy Admin' || selectedRole === 'Delivery Agent') {
         // Wait for admin approval
-        Alert.alert(
+        showAlert(
           'Application Submitted! 🎉',
           `Your ${selectedRole === 'Pharmacy Admin' ? 'pharmacy' : 'delivery partner'} application has been submitted. Our team will review your documents and approve your account within 24-48 hours.`,
+          'success',
           [{ text: 'OK', onPress: () => navigation.replace('UnderReview') }]
         );
       } else {
-        Alert.alert('Success!', 'Your account has been created successfully.', [
+        showAlert('Success!', 'Your account has been created successfully.', 'success', [
           { 
             text: 'Get Started', 
             onPress: () => {
@@ -168,7 +241,7 @@ export default function SignUpScreen({ route, navigation }) {
       } else if (error.code === 'auth/weak-password') {
         friendlyMessage = 'Your password is too weak. Please use at least 6 characters.';
       }
-      Alert.alert('Registration Failed', friendlyMessage);
+      showAlert('Registration Failed', friendlyMessage);
     } finally {
       setLoading(false);
     }
@@ -178,7 +251,7 @@ export default function SignUpScreen({ route, navigation }) {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Permission needed', 'Please allow access to your photo library to upload documents.');
+        showAlert('Permission needed', 'Please allow access to your photo library to upload documents.');
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -190,31 +263,52 @@ export default function SignUpScreen({ route, navigation }) {
         setter(result.assets[0].uri);
       }
     } catch (err) {
-      Alert.alert('Error', 'Could not pick image.');
+      console.error(err);
+      showAlert('Error', 'Could not pick image.');
     }
   };
 
-  const DocumentUploader = ({ title, subtitle, uri, setUri }) => (
+  const takePhoto = async (setter) => {
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        showAlert('Permission needed', 'Please allow access to your camera to take a photo.');
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: false,
+        quality: 0.8,
+      });
+      if (!result.canceled) {
+        setter(result.assets[0].uri);
+      }
+    } catch (err) {
+      console.error(err);
+      showAlert('Error', 'Could not take photo.');
+    }
+  };
+
+  const DocumentUploader = ({ title, subtitle, uri, setUri, optional = false, useCameraOnly = false }) => (
     <View style={styles.inputGroup}>
       <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-        <Text style={[styles.label, { marginBottom: 0 }]}>{title} *</Text>
+        <Text style={[styles.label, { marginBottom: 0 }]}>{title} {optional ? '(Optional)' : '*'}</Text>
         {uri && <CheckCircle2 color="#10B981" size={16} style={{ marginLeft: 8 }} />}
       </View>
       {subtitle && <Text style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 10 }}>{subtitle}</Text>}
-      <TouchableOpacity style={styles.licenseBox} onPress={() => pickImage(setUri)}>
+      <TouchableOpacity style={styles.licenseBox} onPress={() => useCameraOnly ? takePhoto(setUri) : pickImage(setUri)}>
         {uri ? (
           <Image source={{ uri }} style={styles.licensePreview} />
         ) : (
           <View style={styles.licensePlaceholder}>
             <Camera color="#6B7280" size={32} />
-            <Text style={styles.licensePickerText}>Tap to upload</Text>
+            <Text style={styles.licensePickerText}>{useCameraOnly ? 'Tap to open camera' : 'Tap to upload'}</Text>
             <Text style={styles.licensePickerSubText}>JPG, PNG • Clear photo required</Text>
           </View>
         )}
       </TouchableOpacity>
       {uri && (
         <TouchableOpacity onPress={() => setUri(null)} style={{ alignItems: 'center', marginTop: 8 }}>
-          <Text style={{ color: '#EF4444', fontSize: 12, fontWeight: '600' }}>Remove & Re-upload</Text>
+          <Text style={{ color: '#EF4444', fontSize: 12, fontWeight: '600' }}>Remove & Re-take</Text>
         </TouchableOpacity>
       )}
     </View>
@@ -361,9 +455,15 @@ export default function SignUpScreen({ route, navigation }) {
                 <DocumentUploader title="PAN Card" uri={panUri} setUri={setPanUri} />
                 <DocumentUploader title="Driving Licence" uri={dlUri} setUri={setDlUri} />
                 <DocumentUploader title="RC (Bike Registration)" uri={rcUri} setUri={setRcUri} />
-                <DocumentUploader title="Bike Insurance" uri={insuranceUri} setUri={setInsuranceUri} />
+                <DocumentUploader title="Bike Insurance" uri={insuranceUri} setUri={setInsuranceUri} optional={true} />
                 <DocumentUploader title="Bank Account Details/Passbook" uri={bankUri} setUri={setBankUri} />
-                <DocumentUploader title="Passport Size Photo" uri={photoUri} setUri={setPhotoUri} />
+                <DocumentUploader 
+                  title="Passport Size Photo" 
+                  subtitle="Please take a real-time selfie. Gallery uploads are disabled for security."
+                  uri={photoUri} 
+                  setUri={setPhotoUri} 
+                  useCameraOnly={true} 
+                />
                 
                 <TouchableOpacity 
                   style={[styles.createButton, loading && { opacity: 0.7 }, { marginTop: 16 }]}
@@ -397,6 +497,7 @@ export default function SignUpScreen({ route, navigation }) {
         }}
         initialLocation={{ address: pharmacyAddress, latitude: pharmacyLat, longitude: pharmacyLng }}
       />
+      <CustomAlert {...alertConfig} onClose={hideAlert} />
     </SafeAreaView>
   );
 }
@@ -412,9 +513,9 @@ const styles = StyleSheet.create({
   formContainer: { padding: 24, marginTop: -20, backgroundColor: '#FFFFFF', borderTopLeftRadius: 32, borderTopRightRadius: 32 },
   inputGroup: { marginBottom: 20 },
   label: { fontSize: 12, fontWeight: 'bold', color: '#374151', marginBottom: 8 },
-  input: { borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, padding: 16, fontSize: 14, backgroundColor: '#FFFFFF' },
+  input: { borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, padding: 16, fontSize: 14, backgroundColor: '#FFFFFF', color: '#111827' },
   passwordContainer: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, backgroundColor: '#FFFFFF' },
-  passwordInput: { flex: 1, padding: 16, fontSize: 14 },
+  passwordInput: { flex: 1, padding: 16, fontSize: 14, color: '#111827' },
   eyeIcon: { padding: 16 },
   termsText: { textAlign: 'center', fontSize: 12, color: '#6B7280', marginVertical: 16 },
   createButton: { backgroundColor: '#00C853', paddingVertical: 16, borderRadius: 24, alignItems: 'center', marginHorizontal: 16 },

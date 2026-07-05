@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Image, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Search, Heart, ArrowLeft, Star, ShoppingCart } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import { useSelector, useDispatch } from 'react-redux';
@@ -71,28 +72,30 @@ export default function PharmacyDetailScreen({ route, navigation }) {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
         {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}><ArrowLeft color="#212121" size={24} /></TouchableOpacity>
-          <TouchableOpacity><Heart color="#212121" size={24} /></TouchableOpacity>
-        </View>
+        <LinearGradient colors={['#00C853', '#1565C0']} style={styles.heroSection}>
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconButton}><ArrowLeft color="#111827" size={20} /></TouchableOpacity>
+            <TouchableOpacity style={styles.iconButton}><Heart color="#111827" size={20} /></TouchableOpacity>
+          </View>
 
-        {/* Pharmacy Info */}
-        <View style={styles.pharmacyInfo}>
-          <View style={styles.logoCircle}>
-            <Text style={{fontSize: 24}}>🏥</Text>
-          </View>
-          <View style={styles.pharmacyDetails}>
-            <Text style={styles.pharmacyName}>{pharmacy.name}</Text>
-            <View style={styles.ratingRow}>
-              <Star color="#FBBF24" fill="#FBBF24" size={14} />
-              <Text style={styles.ratingText}>{pharmacy.rating || '4.5'} ({pharmacy.reviews || '100'}+ reviews)</Text>
+          {/* Pharmacy Info */}
+          <View style={styles.pharmacyInfo}>
+            <View style={styles.logoCircle}>
+              <Text style={{fontSize: 24}}>🏥</Text>
             </View>
-            <Text style={styles.addressText}>{pharmacy.address || 'Address not set'}</Text>
+            <View style={styles.pharmacyDetails}>
+              <Text style={styles.pharmacyName}>{pharmacy.name}</Text>
+              <View style={styles.ratingRow}>
+                <Star color="#FBBF24" fill="#FBBF24" size={14} />
+                <Text style={styles.ratingText}>{pharmacy.rating || '4.5'} ({pharmacy.reviews || '100'}+ reviews)</Text>
+              </View>
+              <Text style={styles.addressText}>{pharmacy.address || 'Address not set'}</Text>
+            </View>
+            <View style={[styles.openBadge, pharmacy.open ? {backgroundColor: '#10B981'} : {backgroundColor: '#EF4444'}]}>
+              <Text style={[styles.openText, {color: '#FFFFFF'}]}>{pharmacy.open ? 'OPEN' : 'CLOSED'}</Text>
+            </View>
           </View>
-          <View style={[styles.openBadge, pharmacy.open ? {backgroundColor: '#D1FAE5'} : {backgroundColor: '#FEE2E2'}]}>
-            <Text style={[styles.openText, pharmacy.open ? {color: '#065F46'} : {color: '#991B1B'}]}>{pharmacy.open ? 'OPEN' : 'CLOSED'}</Text>
-          </View>
-        </View>
+        </LinearGradient>
 
         <View style={styles.content}>
           {/* Search */}
@@ -161,17 +164,19 @@ export default function PharmacyDetailScreen({ route, navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F9FAFB' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', padding: 16, paddingTop: 8 },
-  pharmacyInfo: { flexDirection: 'row', padding: 16, alignItems: 'flex-start', borderBottomWidth: 1, borderBottomColor: '#F3F4F6', paddingBottom: 24 },
-  logoCircle: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#D1FAE5', marginRight: 16, alignItems: 'center', justifyContent: 'center' },
+  heroSection: { borderBottomLeftRadius: 32, borderBottomRightRadius: 32, elevation: 8, shadowColor: '#00C853', shadowOpacity: 0.3, shadowRadius: 10, paddingBottom: 24, marginBottom: -20 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', padding: 16, paddingTop: 16 },
+  iconButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', elevation: 2 },
+  pharmacyInfo: { flexDirection: 'row', paddingHorizontal: 24, alignItems: 'center' },
+  logoCircle: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#FFFFFF', marginRight: 16, alignItems: 'center', justifyContent: 'center', elevation: 4 },
   pharmacyDetails: { flex: 1 },
-  pharmacyName: { fontSize: 20, fontWeight: 'bold', color: '#111827', marginBottom: 4 },
+  pharmacyName: { fontSize: 22, fontWeight: '900', color: '#FFFFFF', marginBottom: 4 },
   ratingRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  ratingText: { color: '#4B5563', fontSize: 12, marginLeft: 4 },
-  addressText: { color: '#6B7280', fontSize: 12 },
-  openBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
-  openText: { fontSize: 10, fontWeight: 'bold' },
-  content: { padding: 16, backgroundColor: '#FFFFFF', flex: 1 },
+  ratingText: { color: 'rgba(255,255,255,0.9)', fontSize: 13, marginLeft: 6, fontWeight: '600' },
+  addressText: { color: 'rgba(255,255,255,0.7)', fontSize: 12 },
+  openBadge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, elevation: 2 },
+  openText: { fontSize: 10, fontWeight: '900', letterSpacing: 0.5 },
+  content: { padding: 24, paddingTop: 40, backgroundColor: '#FFFFFF', flex: 1, borderTopLeftRadius: 32, borderTopRightRadius: 32 },
   sectionLabel: { fontSize: 12, fontWeight: '600', color: '#374151', marginBottom: 8 },
   searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3F4F6', borderRadius: 8, paddingHorizontal: 12, marginBottom: 20 },
   searchIcon: { marginRight: 8 },
@@ -193,10 +198,10 @@ const styles = StyleSheet.create({
   substitutePrice: { fontSize: 12, color: '#059669', fontWeight: 'bold' },
   subAddBtn: { backgroundColor: '#22C55E', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, marginLeft: 4 },
   subAddText: { color: '#FFF', fontSize: 10, fontWeight: 'bold' },
-  addBtn: { backgroundColor: '#2563EB', borderRadius: 8, paddingVertical: 8, alignItems: 'center' },
+  addBtn: { backgroundColor: '#111827', borderRadius: 8, paddingVertical: 8, alignItems: 'center' },
   addBtnText: { color: '#FFF', fontSize: 12, fontWeight: 'bold' },
-  floatingButtonContainer: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16, backgroundColor: 'rgba(255,255,255,0.9)' },
-  cartButton: { backgroundColor: '#00C853', borderRadius: 8, paddingVertical: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  floatingButtonContainer: { position: 'absolute', bottom: 20, left: 24, right: 24, alignItems: 'center' },
+  cartButton: { backgroundColor: '#111827', borderRadius: 30, paddingVertical: 16, paddingHorizontal: 32, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', elevation: 10, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, width: '100%' },
   cartButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' },
 });
 

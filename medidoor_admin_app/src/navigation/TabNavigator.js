@@ -1,12 +1,12 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Home, ShoppingBag, Store, Users, MapPin } from 'lucide-react-native';
+import { Home, ShoppingBag, Store, Users, MapPin, Search, Banknote } from 'lucide-react-native';
 
 import DashboardScreen from '../screens/DashboardScreen';
 import OrdersScreen from '../screens/OrdersScreen';
-import PharmaciesScreen from '../screens/PharmaciesScreen';
 import UsersScreen from '../screens/UsersScreen';
 import LiveDriversScreen from '../screens/LiveDriversScreen';
+import FinanceScreen from '../screens/FinanceScreen';
 
 const Tab = createBottomTabNavigator();
 
@@ -48,13 +48,6 @@ export default function TabNavigator() {
         }}
       />
       <Tab.Screen
-        name="Pharmacies"
-        component={PharmaciesScreen}
-        options={{
-          tabBarIcon: ({ color, size }) => <Store color={color} size={size} />
-        }}
-      />
-      <Tab.Screen
         name="Drivers"
         component={LiveDriversScreen}
         options={{
@@ -62,10 +55,17 @@ export default function TabNavigator() {
         }}
       />
       <Tab.Screen
-        name="Accounts"
+        name="Search"
         component={UsersScreen}
         options={{
-          tabBarIcon: ({ color, size }) => <Users color={color} size={size} />
+          tabBarIcon: ({ color, size }) => <Search color={color} size={size} />
+        }}
+      />
+      <Tab.Screen
+        name="Finance"
+        component={FinanceScreen}
+        options={{
+          tabBarIcon: ({ color, size }) => <Banknote color={color} size={size} />
         }}
       />
     </Tab.Navigator>
