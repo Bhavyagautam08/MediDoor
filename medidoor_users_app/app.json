@@ -1,0 +1,55 @@
+{
+  "expo": {
+    "name": "Medidoor",
+    "slug": "medidoor",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/logo.jpeg",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/logo.jpeg",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#ffffff",
+        "foregroundImage": "./assets/logo.jpeg"
+      },
+      "package": "com.anonymous.medidoor.app",
+      "googleServicesFile": "./google-services.json",
+      "config": {
+        "googleMaps": {
+          "apiKey": "[REDACTED]"
+        }
+      }
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Medidoor to use your location to calculate distance to pharmacies and track deliveries."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Medidoor needs access to your photos so you can upload medical prescriptions.",
+          "cameraPermission": "Medidoor needs access to your camera so you can take a picture of your medical prescription."
+        }
+      ]
+    ],
+    "web": {
+      "favicon": "./assets/logo.jpeg"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "b796c561-e55c-4b95-aa19-f6aa8d5c4036"
+      }
+    },
+    "owner": "bhavya_0608"
+  }
+}

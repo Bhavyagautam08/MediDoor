@@ -1,0 +1,119 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return exists(/databases/$(database)/documents/admins/$(request.auth.uid)) || 
+             exists(/databases/$(database)/documents/platformAdmins/$(request.auth.uid));
+    }
+    
+    function isPlatformAdmin() {
+      return exists(/databases/$(database)/documents/platformAdmins/$(request.auth.uid));
+    }
+    
+    function isPharmacyAdmin(userId) {
+      return exists(/databases/$(database)/documents/pharmacies/$(userId));
+    }
+    
+    // Admins Collection
+    match /admins/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // Platform Admins Collection
+    match /platformAdmins/{userId} {
+      allow read: if isAuthenticated();
+      // For development/demo purposes only: allow users to upgrade themselves to admin
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Customers Collection
+    match /customers/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(userId) || isAdmin();
+
+      // Notifications Subcollection
+      match /notifications/{notificationId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow write: if isAuthenticated(); // Allow system/pharmacy/drivers to push notifications
+      }
+    }
+    
+    // Pharmacies Collection
+    match /pharmacies/{pharmacyId} {
+      allow read: if isAuthenticated(); // Anyone can view pharmacies (e.g., customers)
+      allow create: if isOwner(pharmacyId); // Can register
+      allow update: if isOwner(pharmacyId) || isAdmin(); // Owner or admin can update
+      allow delete: if isAdmin();
+    }
+    
+    // Delivery Agents Collection
+    match /delivery_agents/{agentId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(agentId);
+      allow update: if isOwner(agentId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+    
+    // Delivery Partners Collection (New name)
+    match /deliveryPartners/{agentId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(agentId) || isAdmin();
+      allow update: if isOwner(agentId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+    
+    // Orders Collection
+    match /orders/{orderId} {
+      allow read: if isAuthenticated(); // Users, drivers, pharmacies need to see orders
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.userId; // Customer places order
+      allow update: if isAuthenticated(); // Drivers/Pharmacies update status
+      allow delete: if isAdmin();
+    }
+    
+    // Platform Config
+    match /platform/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // Settings Config (Feature Flags)
+    match /settings/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // Inventory Collection
+    match /inventory/{itemId} {
+      allow read: if isAuthenticated();
+      allow write: if isPharmacyAdmin(request.auth.uid) || isAdmin();
+    }
+    
+    // Prescription Requests Collection
+    match /prescription_requests/{requestId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.customerId;
+      allow update: if isAuthenticated(); // Both customer and pharmacy can update
+      allow delete: if isAdmin() || (isAuthenticated() && request.auth.uid == resource.data.customerId);
+      
+      // Quotes Subcollection
+      match /quotes/{quoteId} {
+        allow read: if isAuthenticated();
+        allow create: if isPharmacyAdmin(request.auth.uid);
+        allow update: if isAuthenticated();
+        allow delete: if isAdmin();
+      }
+    }
+  }
+}
