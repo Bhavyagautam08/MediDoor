@@ -12,30 +12,38 @@ const normalizeRole = (role) => {
 };
 
 // Get the correct collection for a normalized role
-const getCollection = (role) => {
+export const getCollection = (role) => {
   if (role === 'Pharmacy Admin') return 'pharmacies';
   if (role === 'Delivery Agent') return 'delivery_agents';
   return 'customers';
+};
+
+export const createAuthUser = async (email, password) => {
+  const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+  return userCredential.user;
+};
+
+export const saveUserDocument = async (uid, email, role, additionalData = {}) => {
+  const normalizedRole = normalizeRole(role);
+  const collectionName = getCollection(normalizedRole);
+
+  await setDoc(doc(db, collectionName, uid), {
+    email: email,
+    role: normalizedRole,
+    createdAt: new Date().toISOString(),
+    ...additionalData,
+  });
+
+  return { role: normalizedRole };
 };
 
 /**
  * Register a new user and save them to the correct collection
  */
 export const registerUser = async (email, password, role, additionalData = {}) => {
-  const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-  const user = userCredential.user;
-
-  const normalizedRole = normalizeRole(role);
-  const collectionName = getCollection(normalizedRole);
-
-  await setDoc(doc(db, collectionName, user.uid), {
-    email: user.email,
-    role: normalizedRole,
-    createdAt: new Date().toISOString(),
-    ...additionalData,
-  });
-
-  return { user, role: normalizedRole };
+  const user = await createAuthUser(email, password);
+  await saveUserDocument(user.uid, email, role, additionalData);
+  return { user, role: normalizeRole(role) };
 };
 
 export const getUserRole = async (uid) => {
@@ -52,6 +60,9 @@ export const getUserRole = async (uid) => {
     const pharmacyData = pharmacySnap.data();
     const status = pharmacyData.status;
     // Gate access based on approval status
+    if (status === 'suspended') {
+      throw new Error('account-suspended');
+    }
     if (status === 'pending') return { role: 'PharmacyPending', data: pharmacyData };
     if (status === 'rejected') return { role: 'PharmacyRejected', data: pharmacyData };
     // 'approved' or no status field (legacy accounts) → full access

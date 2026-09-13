@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Dimensions } from 'react-native';
 import { IndianRupee, Store, Navigation, Activity, CheckCircle, TrendingUp, Wallet } from 'lucide-react-native';
-import { collection, onSnapshot, query, where, getDoc, doc } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, getDoc, doc, getDocs } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 
 const { width } = Dimensions.get('window');
@@ -50,9 +50,29 @@ export default function FinanceScreen({ navigation }) {
   }, []);
 
   useEffect(() => {
-    // 2. Listen to DELIVERED orders
-    const q = query(collection(db, 'orders'), where('status', '==', 'delivered'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    let pharmaciesMap = {};
+    let driversMap = {};
+
+    const fetchNames = async () => {
+      try {
+        const pSnap = await getDocs(collection(db, 'pharmacies'));
+        pSnap.forEach(doc => {
+          pharmaciesMap[doc.id] = doc.data().name || doc.data().pharmacyName || 'Unknown Pharmacy';
+        });
+        
+        const dSnap = await getDocs(collection(db, 'delivery_agents'));
+        dSnap.forEach(doc => {
+          driversMap[doc.id] = doc.data().name || doc.data().fullName || 'Unknown Driver';
+        });
+      } catch (err) {
+        console.error("Error fetching name maps:", err);
+      }
+    };
+
+    fetchNames().then(() => {
+      // 2. Listen to DELIVERED orders
+      const q = query(collection(db, 'orders'), where('status', 'in', ['delivered', 'Delivered']));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
       let medidoorTotal = 0;
       let totalValue = 0;
       
@@ -61,33 +81,39 @@ export default function FinanceScreen({ navigation }) {
 
       snapshot.forEach(doc => {
         const order = doc.data();
-        const subtotal = order.subtotal || 0;
-        const deliveryFee = order.deliveryFee || 0;
+        const sub = Number(order.subtotal || 0);
+        const del = Number(order.deliveryFee || 0);
+        const serv = Number(order.serviceFee || 15);
+        const commRate = Number(order.platformCommission || commissionRate * 100) / 100;
         
         totalValue += (order.totalAmount || 0);
 
-        // Medidoor takes commission from the subtotal (medicine cost)
-        const medidoorCut = subtotal * commissionRate;
-        const pharmacyCut = subtotal - medidoorCut;
+        // Driver gets 80% (min 30) of delivery fee
+        const driverCut = del ? Math.max(30, Math.floor(del * 0.8)) : 0;
+        
+        // Medidoor takes commission from subtotal + service fee + remaining delivery margin
+        const pharmacyCut = sub - (sub * commRate);
+        const medidoorCut = serv + (del - driverCut) + (sub * commRate);
         
         medidoorTotal += medidoorCut;
 
         // Tally Pharmacy
         if (order.pharmacyId) {
           if (!pMap[order.pharmacyId]) {
-            pMap[order.pharmacyId] = { name: order.pharmacyName || 'Unknown Pharmacy', owed: 0, orderCount: 0 };
+            pMap[order.pharmacyId] = { name: pharmaciesMap[order.pharmacyId] || order.pharmacyName || 'Unknown Pharmacy', owed: 0, orderCount: 0 };
           }
           pMap[order.pharmacyId].owed += pharmacyCut;
           pMap[order.pharmacyId].orderCount += 1;
         }
 
-        // Tally Driver (Gets 100% of delivery fee)
-        if (order.driverId) {
-          if (!dMap[order.driverId]) {
-            dMap[order.driverId] = { name: order.driverName || 'Unknown Driver', owed: 0, orderCount: 0 };
+        // Tally Driver
+        const dId = order.riderId || order.driverId;
+        if (dId) {
+          if (!dMap[dId]) {
+            dMap[dId] = { name: driversMap[dId] || order.driverName || order.riderName || 'Unknown Driver', owed: 0, orderCount: 0 };
           }
-          dMap[order.driverId].owed += deliveryFee;
-          dMap[order.driverId].orderCount += 1;
+          dMap[dId].owed += driverCut;
+          dMap[dId].orderCount += 1;
         }
       });
 
@@ -107,9 +133,10 @@ export default function FinanceScreen({ navigation }) {
       setPharmacyBalances(pArray);
       setDriverBalances(dArray);
       setLoading(false);
+      });
+      
+      return () => unsubscribe();
     });
-
-    return () => unsubscribe();
   }, [commissionRate]);
 
   if (loading) {

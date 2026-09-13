@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Alert, Modal, Image, ScrollView, Dimensions, TextInput } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Alert, Modal, Image, ScrollView, Dimensions, TextInput, RefreshControl } from 'react-native';
 import { Users, User, Check, X, ShieldAlert, ShieldCheck, MapPin, FileText, X as CloseIcon, Search, Store } from 'lucide-react-native';
 import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
@@ -18,6 +18,16 @@ export default function UsersScreen({ route, navigation }) {
   
   const [viewerVisible, setViewerVisible] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [statusModal, setStatusModal] = useState({ visible: false, title: '', message: '', type: 'success' });
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    // Simulate refresh for live listener UX
+    setTimeout(() => {
+      setRefreshing(false);
+    }, 1000);
+  };
 
   // Sync tab if navigated from dashboard
   useEffect(() => {
@@ -57,10 +67,10 @@ export default function UsersScreen({ route, navigation }) {
     try {
       const docRef = doc(db, collectionName, id);
       await updateDoc(docRef, { status });
-      Alert.alert("Success", `${name} has been ${status === 'approved' ? 'approved' : 'suspended'}.`);
+      setStatusModal({ visible: true, title: 'Success', message: `${name} has been ${status === 'approved' ? 'approved' : 'suspended'}.`, type: 'success' });
     } catch (error) {
       console.error("Error updating partner status:", error);
-      Alert.alert("Error", "Could not update status.");
+      setStatusModal({ visible: true, title: 'Error', message: 'Could not update status.', type: 'error' });
     }
   };
 
@@ -273,13 +283,28 @@ export default function UsersScreen({ route, navigation }) {
   };
 
   const rawData = activeTab === 'customers' ? customers : activeTab === 'partners' ? partners : pharmacies;
-  const data = rawData.filter(item => {
+  let data = rawData.filter(item => {
     const query = searchQuery.toLowerCase();
     const searchId = (item.medidoorId || item.id.slice(-8)).toLowerCase();
     const name = (item.name || '').toLowerCase();
     const phone = (item.phone || '').toLowerCase();
     const email = (item.email || '').toLowerCase();
     return searchId.includes(query) || name.includes(query) || phone.includes(query) || email.includes(query);
+  });
+
+  // Sort so that pending approvals are always at the top
+  data.sort((a, b) => {
+    const aPending = a.status !== 'approved' && a.status !== 'active' && a.status !== 'suspended';
+    const bPending = b.status !== 'approved' && b.status !== 'active' && b.status !== 'suspended';
+    
+    if (aPending && !bPending) return -1;
+    if (!aPending && bPending) return 1;
+    
+    // Fallback sort by creation time if available
+    if (a.createdAt && b.createdAt) {
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    }
+    return 0;
   });
 
   // Documents array formatting
@@ -348,11 +373,6 @@ export default function UsersScreen({ route, navigation }) {
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color="#0F172A" />
         </View>
-      ) : searchQuery.trim().length === 0 ? (
-        <View style={styles.centerContainer}>
-          <Search color="#CBD5E1" size={48} />
-          <Text style={styles.emptyText}>Type a name, ID, or phone to search</Text>
-        </View>
       ) : data.length === 0 ? (
         <View style={styles.centerContainer}>
           <Users color="#CBD5E1" size={48} />
@@ -365,6 +385,9 @@ export default function UsersScreen({ route, navigation }) {
           renderItem={activeTab === 'customers' ? renderCustomer : activeTab === 'partners' ? renderPartner : renderPharmacy}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#0F172A']} />
+          }
         />
       )}
 
@@ -397,6 +420,25 @@ export default function UsersScreen({ route, navigation }) {
                 )}
               />
             )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Custom Status Modal */}
+      <Modal visible={statusModal.visible} transparent={true} animationType="fade">
+        <View style={styles.statusModalOverlay}>
+          <View style={styles.statusModalCard}>
+            <View style={[styles.statusModalIconWrapper, { backgroundColor: statusModal.type === 'success' ? '#DCFCE7' : '#FEE2E2' }]}>
+              {statusModal.type === 'success' ? <Check color="#10B981" size={36} /> : <X color="#EF4444" size={36} />}
+            </View>
+            <Text style={styles.statusModalTitle}>{statusModal.title}</Text>
+            <Text style={styles.statusModalMessage}>{statusModal.message}</Text>
+            <TouchableOpacity 
+              style={[styles.statusModalBtn, { backgroundColor: statusModal.type === 'success' ? '#10B981' : '#EF4444' }]}
+              onPress={() => setStatusModal({ ...statusModal, visible: false })}
+            >
+              <Text style={styles.statusModalBtnText}>Continue</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -680,5 +722,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
-  }
+  },
+  statusModalOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  statusModalCard: { width: '100%', backgroundColor: '#FFFFFF', borderRadius: 24, padding: 32, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.1, shadowRadius: 20, elevation: 10 },
+  statusModalIconWrapper: { width: 80, height: 80, borderRadius: 40, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
+  statusModalTitle: { fontSize: 24, fontWeight: '800', color: '#0F172A', marginBottom: 8 },
+  statusModalMessage: { fontSize: 16, color: '#64748B', textAlign: 'center', marginBottom: 32, lineHeight: 24 },
+  statusModalBtn: { width: '100%', paddingVertical: 16, borderRadius: 16, alignItems: 'center' },
+  statusModalBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' }
 });

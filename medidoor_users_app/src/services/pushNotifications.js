@@ -5,6 +5,7 @@ import { doc, updateDoc } from 'firebase/firestore';
 import Constants from 'expo-constants';
 import { db } from '../firebaseConfig';
 import { getCollection } from './authService';
+import { navigate } from '../navigation/NavigationService';
 
 // How notifications behave when app is in foreground or background
 Notifications.setNotificationHandler({
@@ -25,6 +26,14 @@ async function configureAndroidChannel() {
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#FF231F7C',
     });
+    
+    await Notifications.setNotificationChannelAsync('high_priority_orders', {
+      name: 'High Priority Orders',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 500, 250, 500],
+      lightColor: '#FF231F7C',
+      sound: true,
+    });
   }
 }
 
@@ -35,6 +44,12 @@ export function registerNotificationListeners() {
 
   const notificationResponseListener = Notifications.addNotificationResponseReceivedListener(response => {
     console.log('Notification response received:', response);
+    const data = response.notification.request.content.data;
+    
+    // Check if it's a live prescription notification
+    if (data?.type === 'live_prescription') {
+      navigate('PharmacyRoot', { screen: 'Prescriptions' });
+    }
   });
 
   return () => {
@@ -63,15 +78,11 @@ export async function registerForPushNotificationsAsync() {
     }
     
     try {
-      // Use Expo Push Token which is required by expo-server-sdk in Cloud Functions
-      const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId ?? "fallback-project-id";
-      
-      const tokenData = await Notifications.getExpoPushTokenAsync({
-        projectId: projectId, // This is required for Expo SDK 50+, even if undefined
-      });
+      // Use Native FCM Device Token to bypass Expo push notification requirements
+      const tokenData = await Notifications.getDevicePushTokenAsync();
       token = tokenData.data;
     } catch (e) {
-      console.warn("Could not get Expo push token (Likely missing projectId in app.json). Push notifications will be disabled for this session.");
+      console.warn("Could not get device push token. Push notifications will be disabled for this session.", e);
     }
   } else {
     console.log('Must use physical device for Push Notifications');

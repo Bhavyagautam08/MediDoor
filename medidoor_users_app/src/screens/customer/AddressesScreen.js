@@ -170,13 +170,13 @@ export default function AddressesScreen({ navigation }) {
             onPress={() => setShowLocationSheet(true)}
             activeOpacity={0.8}
           >
-            <Plus color="#00C853" size={24} />
+            <Plus color="#0D9494" size={24} />
             <Text style={styles.addBtnTriggerText}>Add New Address</Text>
           </TouchableOpacity>
         </View>
 
         {loading ? (
-          <ActivityIndicator size="large" color="#00C853" style={{ marginTop: 40 }} />
+          <ActivityIndicator size="large" color="#0D9494" style={{ marginTop: 40 }} />
         ) : (
           <FlatList 
             data={addresses.filter(a => a.id !== 'temp_gps')}
@@ -195,9 +195,9 @@ export default function AddressesScreen({ navigation }) {
               >
                 <View style={styles.addressLeft}>
                   <View style={[styles.iconWrap, item.isDefault && {backgroundColor: '#D1FAE5'}]}>
-                    {item.tag === 'Home' ? <House color={item.isDefault ? "#00C853" : "#6B7280"} size={20} /> :
-                     item.tag === 'Work' ? <Briefcase color={item.isDefault ? "#00C853" : "#6B7280"} size={20} /> :
-                     <Navigation color={item.isDefault ? "#00C853" : "#6B7280"} size={20} />}
+                    {item.tag === 'Home' ? <House color={item.isDefault ? "#0D9494" : "#6B7280"} size={20} /> :
+                     item.tag === 'Work' ? <Briefcase color={item.isDefault ? "#0D9494" : "#6B7280"} size={20} /> :
+                     <Navigation color={item.isDefault ? "#0D9494" : "#6B7280"} size={20} />}
                   </View>
                   <View style={{ flex: 1, marginLeft: 12 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -244,12 +244,12 @@ const styles = StyleSheet.create({
   content: { flex: 1 },
   addSection: { padding: 16, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
   addBtnTrigger: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ECFDF5', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#A7F3D0', borderStyle: 'dashed' },
-  addBtnTriggerText: { color: '#00C853', fontSize: 16, fontWeight: 'bold', marginLeft: 8 },
+  addBtnTriggerText: { color: '#0D9494', fontSize: 16, fontWeight: 'bold', marginLeft: 8 },
   list: { padding: 16 },
   centerEmpty: { alignItems: 'center', marginTop: 60 },
   emptyText: { color: '#6B7280', fontSize: 16 },
   addressCard: { flexDirection: 'row', backgroundColor: '#fff', padding: 16, borderRadius: 12, marginBottom: 12, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, elevation: 2, alignItems: 'flex-start', justifyContent: 'space-between', borderWidth: 1, borderColor: '#fff' },
-  addressCardDefault: { borderColor: '#00C853', backgroundColor: '#F0FDF4' },
+  addressCardDefault: { borderColor: '#0D9494', backgroundColor: '#F0FDF4' },
   addressLeft: { flexDirection: 'row', flex: 1, marginRight: 16 },
   iconWrap: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
   tagLabel: { fontSize: 14, fontWeight: 'bold', color: '#111827', marginBottom: 4 },

@@ -7,6 +7,7 @@ import { WebView } from 'react-native-webview';
 import { ArrowLeft, Clock, CheckCircle, XCircle, Package, Eye, ChevronRight, AlertTriangle, ShieldCheck, Search } from 'lucide-react-native';
 import { collection, query, onSnapshot, doc, updateDoc, orderBy } from 'firebase/firestore';
 import { auth, db } from '../../firebaseConfig';
+import OtpInput from '../../components/OtpInput';
 
 // Full status pipeline for pharmacy
 const PHARMACY_TABS = [
@@ -22,6 +23,7 @@ export default function OrderManagementScreen({ navigation }) {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewingRx, setViewingRx] = useState(null);
+  const [selectedOrderDetails, setSelectedOrderDetails] = useState(null);
   const [now, setNow] = useState(Date.now());
   const [otpInputs, setOtpInputs] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
@@ -251,7 +253,7 @@ export default function OrderManagementScreen({ navigation }) {
       </ScrollView>
 
       {loading ? (
-        <View style={styles.center}><ActivityIndicator size="large" color="#00C853" /></View>
+        <View style={styles.center}><ActivityIndicator size="large" color="#0D9494" /></View>
       ) : (
         <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.content}>
           {filteredOrders.length === 0 ? (
@@ -320,6 +322,10 @@ export default function OrderManagementScreen({ navigation }) {
 
                 {/* Action Buttons */}
                 <View style={styles.actionRow}>
+                  <TouchableOpacity style={styles.detailBtn} onPress={() => setSelectedOrderDetails(order)}>
+                    <Eye size={16} color="#1D4ED8" />
+                    <Text style={styles.detailBtnText}> Details</Text>
+                  </TouchableOpacity>
                   {activeTab === 'Placed' && (
                     <>
                       <TouchableOpacity style={styles.rejectBtn} onPress={() => handleUpdateStatus(order.id, 'Cancelled')}>
@@ -327,7 +333,7 @@ export default function OrderManagementScreen({ navigation }) {
                         <Text style={styles.rejectTxt}> Reject</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        style={[styles.acceptBtn, { backgroundColor: order.prescriptionUrl ? '#3B82F6' : '#00C853' }]}
+                        style={[styles.acceptBtn, { backgroundColor: order.prescriptionUrl ? '#3B82F6' : '#0D9494' }]}
                         onPress={() => handleUpdateStatus(order.id, order.prescriptionUrl ? 'Verifying Prescription' : 'Accepted')}
                       >
                         <CheckCircle size={16} color="#fff" />
@@ -349,48 +355,124 @@ export default function OrderManagementScreen({ navigation }) {
                       <Text style={styles.acceptTxt}> Mark as Ready for Pickup</Text>
                     </TouchableOpacity>
                   )}
-
-                  {activeTab === 'Ready for Pickup' && (
-                    <View style={styles.otpContainer}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                        <ShieldCheck color="#10B981" size={16} />
-                        <Text style={styles.otpTitle}>Secure Handoff</Text>
-                      </View>
-                      <Text style={styles.otpSub}>Ask the delivery agent for their Pickup PIN to release the package.</Text>
-                      <View style={{ flexDirection: 'row', gap: 12, marginTop: 12 }}>
-                        <TextInput
-                          style={styles.otpInput}
-                          placeholder="Enter PIN"
-                          maxLength={6}
-                          autoCapitalize="characters"
-                          value={otpInputs[order.id] || ''}
-                          onChangeText={(t) => setOtpInputs(prev => ({...prev, [order.id]: t}))}
-                        />
-                        <TouchableOpacity style={styles.verifyBtn} onPress={() => handleVerifyOtp(order)}>
-                          <Text style={styles.verifyTxt}>Verify & Release</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  )}
-
-                  {activeTab === 'History' && (
-                    <View style={styles.historyFooter}>
-                      <Text style={[styles.historyStatus, { color: (order.status === 'Delivered' || order.status === 'Picked Up' || order.status === 'Out for Delivery') ? '#10B981' : '#EF4444' }]}>
-                        {order.status}
-                      </Text>
-                      {order.status === 'Delivered' && order.deliveredAt && (
-                        <Text style={{ fontSize: 12, color: '#6B7280' }}>
-                          Delivered {new Date(order.deliveredAt).toLocaleDateString()}
-                        </Text>
-                      )}
-                    </View>
-                  )}
                 </View>
+
+                {activeTab === 'Ready for Pickup' && (
+                  <View style={[styles.otpContainer, { marginTop: 12 }]}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                      <ShieldCheck color="#10B981" size={16} />
+                      <Text style={styles.otpTitle}>Secure Handoff</Text>
+                    </View>
+                    <Text style={styles.otpSub}>Ask the delivery agent for their 4-digit Pickup PIN to release the package.</Text>
+                    <OtpInput 
+                      value={otpInputs[order.id] || ''}
+                      onChangeText={(t) => setOtpInputs(prev => ({...prev, [order.id]: t}))}
+                      length={4}
+                    />
+                    <TouchableOpacity style={[styles.verifyBtn, { paddingVertical: 14, marginTop: 4, alignItems: 'center' }]} onPress={() => handleVerifyOtp(order)}>
+                      <Text style={styles.verifyTxt}>Verify & Release</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {activeTab === 'History' && (
+                  <View style={styles.historyFooter}>
+                    <Text style={[styles.historyStatus, { color: (order.status === 'Delivered' || order.status === 'Picked Up' || order.status === 'Out for Delivery') ? '#10B981' : '#EF4444' }]}>
+                      {order.status}
+                    </Text>
+                    {order.status === 'Delivered' && order.deliveredAt && (
+                      <Text style={{ fontSize: 12, color: '#6B7280' }}>
+                        Delivered {new Date(order.deliveredAt).toLocaleDateString()}
+                      </Text>
+                    )}
+                  </View>
+                  )}
               </View>
             ))
           )}
         </ScrollView>
       )}
+
+      {/* Order Detail Modal */}
+      <Modal visible={!!selectedOrderDetails} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Order Details</Text>
+              <TouchableOpacity onPress={() => setSelectedOrderDetails(null)}>
+                <XCircle color="#EF4444" size={28} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView contentContainerStyle={styles.detailContent}>
+              <Text style={styles.detailLabel}>Order ID</Text>
+              <Text style={styles.detailValue}>#{selectedOrderDetails?.numericId || selectedOrderDetails?.id?.slice(-6).toUpperCase()}</Text>
+
+              <Text style={styles.detailLabel}>Status</Text>
+              <Text style={styles.detailValue}>{selectedOrderDetails?.status || 'N/A'}</Text>
+
+              {selectedOrderDetails?.address ? (
+                <>
+                  <Text style={styles.detailLabel}>Delivery Address</Text>
+                  <Text style={styles.detailValue}>{selectedOrderDetails.address}</Text>
+                </>
+              ) : null}
+
+              {selectedOrderDetails?.customerName ? (
+                <>
+                  <Text style={styles.detailLabel}>Customer</Text>
+                  <Text style={styles.detailValue}>{selectedOrderDetails.customerName}</Text>
+                </>
+              ) : null}
+
+              {selectedOrderDetails?.customerPhone ? (
+                <>
+                  <Text style={styles.detailLabel}>Customer Phone</Text>
+                  <Text style={styles.detailValue}>{selectedOrderDetails.customerPhone}</Text>
+                </>
+              ) : null}
+
+              <Text style={styles.detailLabel}>Billing</Text>
+              <View style={styles.billingCard}>
+                {(selectedOrderDetails?.items || []).map((item, idx) => (
+                  <View key={idx} style={styles.billingRow}>
+                    <Text style={styles.billingItem}>{item.qty} x {item.name}</Text>
+                    <Text style={styles.billingAmount}>₹{(item.price * item.qty).toFixed(2)}</Text>
+                  </View>
+                ))}
+                <View style={styles.billingRow}>
+                  <Text style={styles.billingItem}>Subtotal</Text>
+                  <Text style={styles.billingAmount}>₹{(selectedOrderDetails?.subtotal || 0).toFixed(2)}</Text>
+                </View>
+                <View style={styles.billingRow}>
+                  <Text style={styles.billingItem}>Delivery Fee</Text>
+                  <Text style={styles.billingAmount}>₹{(selectedOrderDetails?.deliveryFee || 0).toFixed(2)}</Text>
+                </View>
+                <View style={styles.billingRow}>
+                  <Text style={styles.billingItem}>Service Fee</Text>
+                  <Text style={styles.billingAmount}>₹{(selectedOrderDetails?.serviceFee || 0).toFixed(2)}</Text>
+                </View>
+                <View style={[styles.billingRow, { marginTop: 8 }]}> 
+                  <Text style={[styles.billingItem, { fontWeight: 'bold' }]}>Total</Text>
+                  <Text style={[styles.billingAmount, { fontWeight: 'bold' }]}>₹{(selectedOrderDetails?.totalAmount || 0).toFixed(2)}</Text>
+                </View>
+              </View>
+
+              <Text style={styles.detailLabel}>Ratings</Text>
+              <View style={styles.ratingDetailRow}>
+                <Text style={styles.ratingDetailLabel}>Pharmacy Rating</Text>
+                <Text style={styles.ratingDetailValue}>{typeof selectedOrderDetails?.serviceRating === 'number' ? selectedOrderDetails.serviceRating.toFixed(1) : 'N/A'}</Text>
+              </View>
+
+              {selectedOrderDetails?.reviewText ? (
+                <>
+                  <Text style={styles.detailLabel}>Customer Review</Text>
+                  <Text style={styles.detailValue}>{selectedOrderDetails.reviewText}</Text>
+                </>
+              ) : null}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       {/* Prescription Viewer Modal */}
       <Modal visible={!!viewingRx} transparent animationType="slide">
@@ -438,7 +520,7 @@ const styles = StyleSheet.create({
   orderHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
   orderId: { fontSize: 18, fontWeight: 'bold', color: '#111827' },
   timeText: { fontSize: 12, color: '#9CA3AF', marginTop: 3 },
-  orderAmount: { fontSize: 20, fontWeight: 'bold', color: '#00C853' },
+  orderAmount: { fontSize: 20, fontWeight: 'bold', color: '#0D9494' },
   addressRow: { flexDirection: 'row', marginBottom: 12 },
   addressLabel: { fontSize: 13, color: '#6B7280', fontWeight: '600' },
   addressText: { fontSize: 13, color: '#374151', flex: 1 },
@@ -468,6 +550,18 @@ const styles = StyleSheet.create({
   modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, height: '85%', padding: 20 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#111827' },
+  detailBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10, borderWidth: 1, borderColor: '#DBEAFE', backgroundColor: '#EFF6FF' },
+  detailBtnText: { color: '#1D4ED8', fontWeight: '700', marginLeft: 6 },
+  detailContent: { paddingBottom: 40 },
+  detailLabel: { fontSize: 13, color: '#6B7280', marginTop: 14, marginBottom: 6, fontWeight: '700' },
+  detailValue: { fontSize: 15, color: '#111827', lineHeight: 22 },
+  billingCard: { backgroundColor: '#F9FAFB', borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#E5E7EB' },
+  billingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  billingItem: { fontSize: 14, color: '#374151' },
+  billingAmount: { fontSize: 14, color: '#111827', fontWeight: '700' },
+  ratingDetailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  ratingDetailLabel: { fontSize: 14, color: '#6B7280' },
+  ratingDetailValue: { fontSize: 14, fontWeight: '700', color: '#111827' },
   rxImage: { flex: 1, width: '100%', backgroundColor: '#F3F4F6', borderRadius: 12 },
   rxApproveBtn: { backgroundColor: '#111827', padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 16 },
   rxApproveTxt: { color: '#fff', fontWeight: 'bold', fontSize: 16 },

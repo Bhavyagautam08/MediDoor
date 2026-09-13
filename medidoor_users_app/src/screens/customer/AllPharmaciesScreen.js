@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, ActivityIndicator, RefreshControl, Alert, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Search, Star, MapPin } from 'lucide-react-native';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
+import { checkIsOpen } from '../../utils/pharmacyUtils';
 
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
   if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
@@ -23,51 +25,64 @@ export default function AllPharmaciesScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [userCoords, setUserCoords] = useState(null);
 
-  useEffect(() => {
-    const fetchPharmacies = async () => {
+  const fetchPharmacies = async () => {
+    try {
+      let locCoords = null;
       try {
-        let locCoords = null;
-        try {
-          const { status } = await Location.getForegroundPermissionsAsync();
-          if (status === 'granted') {
-            const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-            locCoords = loc.coords;
-            setUserCoords(locCoords);
-          }
-        } catch (e) {
-          console.warn("Location permission not granted or available", e);
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          locCoords = loc.coords;
+          setUserCoords(locCoords);
         }
-
-        const pharmsSnap = await getDocs(query(collection(db, 'pharmacies'), where('role', '==', 'Pharmacy Admin')));
-        const pharms = [];
-        pharmsSnap.forEach(doc => pharms.push({ id: doc.id, ...doc.data() }));
-
-        const updatedPharmacies = pharms.map(p => {
-          let dynamicDist = p.deliveryTime || '15-20 mins';
-          const pLat = p.latitude || 28.5355;
-          const pLon = p.longitude || 77.3910;
-
-          if (locCoords && locCoords.latitude && locCoords.longitude) {
-            const calculatedKm = calculateDistance(locCoords.latitude, locCoords.longitude, pLat, pLon);
-            dynamicDist = `${calculatedKm.toFixed(1)} km`;
-          }
-          return { ...p, calculatedDist: dynamicDist, numericDist: parseFloat(dynamicDist) || 999 };
-        });
-
-        // Sort by distance
-        updatedPharmacies.sort((a, b) => a.numericDist - b.numericDist);
-
-        setPharmacies(updatedPharmacies);
-        setFilteredPharmacies(updatedPharmacies);
-      } catch (error) {
-        console.error("Error fetching pharmacies:", error);
-      } finally {
-        setLoading(false);
+      } catch (e) {
+        console.warn("Location permission not granted or available", e);
       }
-    };
 
+      const pharmsSnap = await getDocs(
+        collection(db, 'pharmacies')
+      );
+      const pharms = [];
+      pharmsSnap.forEach(doc => {
+        const data = doc.data();
+        if (checkIsOpen(data)) {
+          pharms.push({ id: doc.id, ...data, open: true });
+        }
+      });
+
+      const updatedPharmacies = pharms.map(p => {
+        let dynamicDist = p.deliveryTime || '15-20 mins';
+        const pLat = p.latitude || 28.5355;
+        const pLon = p.longitude || 77.3910;
+
+        if (locCoords && locCoords.latitude && locCoords.longitude) {
+          const calculatedKm = calculateDistance(locCoords.latitude, locCoords.longitude, pLat, pLon);
+          dynamicDist = `${calculatedKm.toFixed(1)} km`;
+        }
+        return { ...p, calculatedDist: dynamicDist, numericDist: parseFloat(dynamicDist) || 999 };
+      });
+
+      updatedPharmacies.sort((a, b) => a.numericDist - b.numericDist);
+      setPharmacies(updatedPharmacies);
+      setFilteredPharmacies(updatedPharmacies);
+    } catch (error) {
+      console.error("Error fetching pharmacies:", error);
+      Alert.alert("Fetch Error", error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchPharmacies();
   }, []);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchPharmacies();
+    setRefreshing(false);
+  };
 
   const handleSearch = (text) => {
     setSearchQuery(text);
@@ -89,13 +104,17 @@ export default function AllPharmaciesScreen({ navigation }) {
       activeOpacity={0.8}
       onPress={() => navigation.navigate('PharmacyDetail', { pharmacyId: item.id })}
     >
-      <View style={styles.pharmacyImagePlaceholder}>
-        <Text style={styles.pharmacyEmoji}>🏥</Text>
-      </View>
+      {item.image ? (
+        <Image source={{ uri: item.image }} style={styles.pharmacyImagePlaceholder} />
+      ) : (
+        <View style={styles.pharmacyImagePlaceholder}>
+          <Text style={styles.pharmacyEmoji}>🏥</Text>
+        </View>
+      )}
       <View style={styles.pharmacyCardContent}>
         <View style={styles.pharmacyHeader}>
           <Text style={styles.pharmacyName} numberOfLines={1}>{item.name}</Text>
-          {item.open ? (
+          {checkIsOpen(item) ? (
             <View style={styles.openBadge}><Text style={styles.openText}>Open</Text></View>
           ) : (
             <View style={styles.closedBadge}><Text style={styles.closedText}>Closed</Text></View>
@@ -105,9 +124,14 @@ export default function AllPharmaciesScreen({ navigation }) {
         
         <View style={styles.ratingRow}>
           <Star color="#F59E0B" fill="#F59E0B" size={14} />
-          <Text style={styles.ratingDistText}> {item.rating || '4.5'}  •  </Text>
+          <Text style={styles.ratingDistText}> {item.rating || 'New'}  •  </Text>
           <MapPin color="#6B7280" size={12} />
           <Text style={styles.ratingDistText}> {item.calculatedDist}</Text>
+          {item.storeDiscount > 0 && (
+            <View style={{ marginLeft: 'auto', backgroundColor: '#FEF2F2', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+              <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#EF4444' }}>🔥 {item.storeDiscount}% OFF</Text>
+            </View>
+          )}
         </View>
       </View>
     </TouchableOpacity>
@@ -115,37 +139,31 @@ export default function AllPharmaciesScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <ArrowLeft color="#111827" size={24} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>All Pharmacies</Text>
-        <View style={{ width: 40 }} />
-      </View>
+      <LinearGradient colors={['#0D9494', '#003366']} style={styles.heroSection}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <ArrowLeft color="#FFFFFF" size={24} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>All Pharmacies</Text>
+          <View style={{ width: 40 }} />
+        </View>
 
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchBox}>
-          <Search color="#9CA3AF" size={20} />
+        <View style={styles.glassSearchBox}>
+          <Search color="#FFFFFF" size={20} style={{ marginRight: 8, opacity: 0.8 }} />
           <TextInput
-            style={styles.searchInput}
+            style={styles.glassSearchInput}
             placeholder="Search pharmacies by name..."
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor="rgba(255,255,255,0.7)"
             value={searchQuery}
             onChangeText={handleSearch}
           />
         </View>
-      </View>
+      </LinearGradient>
 
       {/* List */}
       {loading ? (
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color="#00C853" />
-        </View>
-      ) : filteredPharmacies.length === 0 ? (
-        <View style={styles.centerContainer}>
-          <Text style={styles.emptyText}>No pharmacies found.</Text>
+          <ActivityIndicator size="large" color="#0D9494" />
         </View>
       ) : (
         <FlatList
@@ -154,6 +172,14 @@ export default function AllPharmaciesScreen({ navigation }) {
           renderItem={renderPharmacy}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={styles.centerContainer}>
+              <Text style={styles.emptyText}>No pharmacies found.</Text>
+            </View>
+          }
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#0D9494']} progressViewOffset={40} />
+          }
         />
       )}
     </SafeAreaView>
@@ -162,13 +188,13 @@ export default function AllPharmaciesScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F9FAFB' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  heroSection: { paddingBottom: 20, paddingTop: 10, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, paddingHorizontal: 16 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12 },
   backBtn: { padding: 8, marginLeft: -8 },
-  headerTitle: { fontSize: 18, fontWeight: '800', color: '#111827', letterSpacing: 0.5 },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: '#FFFFFF', letterSpacing: 0.5 },
   
-  searchContainer: { backgroundColor: '#FFFFFF', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3F4F6', borderRadius: 12, paddingHorizontal: 12, height: 44 },
-  searchInput: { flex: 1, marginLeft: 8, fontSize: 15, color: '#111827' },
+  glassSearchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255, 255, 255, 0.15)', borderRadius: 16, paddingHorizontal: 16, height: 50, marginTop: 12, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.2)' },
+  glassSearchInput: { flex: 1, color: '#FFFFFF', fontSize: 16, fontWeight: '500' },
   
   centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyText: { color: '#6B7280', fontSize: 16 },
@@ -184,7 +210,7 @@ const styles = StyleSheet.create({
   pharmacyAddress: { fontSize: 13, color: '#6B7280', marginBottom: 8 },
   
   openBadge: { backgroundColor: '#DCFCE7', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
-  openText: { color: '#00C853', fontSize: 10, fontWeight: 'bold' },
+  openText: { color: '#0D9494', fontSize: 10, fontWeight: 'bold' },
   closedBadge: { backgroundColor: '#FEE2E2', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
   closedText: { color: '#EF4444', fontSize: 10, fontWeight: 'bold' },
   

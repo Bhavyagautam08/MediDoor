@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, SafeAreaView,
-  Platform, ActivityIndicator, Alert, Image, TextInput, Modal, BackHandler
+  Platform, ActivityIndicator, Alert, Image, TextInput, Modal, BackHandler, ScrollView, KeyboardAvoidingView
 } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { Navigation, MapPin, CheckCircle, Clock, Package, IndianRupee, Search, ShieldCheck, Star } from 'lucide-react-native';
-import { collection, query, onSnapshot, doc, updateDoc, getDoc, orderBy } from 'firebase/firestore';
+import { Navigation, MapPin, CheckCircle, Clock, Package, IndianRupee, Search, ShieldCheck, Star, Bell, XCircle } from 'lucide-react-native';
+import { collection, query, onSnapshot, doc, updateDoc, getDoc, orderBy, where } from 'firebase/firestore';
 import { db, auth } from '../../firebaseConfig';
 import * as Location from 'expo-location';
 import OtpModal from '../../components/OtpModal';
+import OtpInput from '../../components/OtpInput';
 import { calculateDistance } from '../../utils/distance';
 
 const getEarning = (order) => {
@@ -31,6 +32,9 @@ export default function DeliveryDashboardScreen({ navigation }) {
   const [acceptModalVisible, setAcceptModalVisible] = useState(false);
   const [dropoffOtpInputs, setDropoffOtpInputs] = useState({});
   const [currentLocation, setCurrentLocation] = useState(null);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [selectedDeliveryOrder, setSelectedDeliveryOrder] = useState(null);
+  const [recentSearchQuery, setRecentSearchQuery] = useState('');
   const currentUser = auth.currentUser;
 
   useEffect(() => {
@@ -40,9 +44,25 @@ export default function DeliveryDashboardScreen({ navigation }) {
       snapshot.forEach((d) => fetched.push({ id: d.id, ...d.data() }));
       setOrders(fetched);
       setLoading(false);
+    }, (err) => {
+      if (err.code !== 'permission-denied') console.error('Orders snapshot error:', err);
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const q = query(
+      collection(db, 'delivery_agents', currentUser.uid, 'notifications'),
+      where('read', '==', false)
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setUnreadCount(snapshot.docs.length);
+    }, (err) => {
+      if (err.code !== 'permission-denied') console.error('Notifications snapshot error:', err);
+    });
+    return () => unsubscribe();
+  }, [currentUser]);
 
   useEffect(() => {
     if (currentUser) {
@@ -67,7 +87,8 @@ export default function DeliveryDashboardScreen({ navigation }) {
           if (snap.exists()) {
             updates[snap.id] = {
               name: snap.data().name || 'Pharmacy',
-              address: snap.data().address || ''
+              address: snap.data().address || '',
+              location: snap.data().location || null
             };
           }
         });
@@ -81,8 +102,8 @@ export default function DeliveryDashboardScreen({ navigation }) {
   const webViewRef = React.useRef(null);
   const knownDeliveryIds = React.useRef(new Set());
 
-  // Riders should only see orders that are actually ready for pickup
-  const availableOrders = orders.filter(o => o.status === 'Ready for Pickup' && !o.riderId);
+  // Riders should see any active order that hasn't been assigned to a driver
+  const availableOrders = orders.filter(o => !o.riderId && o.status !== 'Delivered' && !['Cancelled', 'cancelled', 'Canceled', 'canceled'].includes(o.status));
 
   // Audio Alerts for New Available Deliveries
   useEffect(() => {
@@ -114,14 +135,10 @@ export default function DeliveryDashboardScreen({ navigation }) {
     };
     manageAudio();
   }, [availableOrders]);
-  const myActiveOrders = orders.filter(o => (o.status === 'Out for Delivery' || o.status === 'Driver Assigned' || o.status === 'Picked Up') && o.riderId === currentUser?.uid);
-  const myCompletedOrders = orders.filter(o => (o.status === 'Delivered' || o.status === 'Cancelled') && o.riderId === currentUser?.uid);
+  const myActiveOrders = orders.filter(o => o.riderId === currentUser?.uid && o.status !== 'Delivered' && !['Cancelled', 'cancelled', 'Canceled', 'canceled'].includes(o.status));
+  const myCompletedOrders = orders.filter(o => (o.status === 'Delivered' || ['Cancelled', 'cancelled', 'Canceled', 'canceled'].includes(o.status)) && o.riderId === currentUser?.uid);
 
-  // Average Rating
-  const ratedOrders = myCompletedOrders.filter(o => typeof o.deliveryRating === 'number');
-  const avgRating = ratedOrders.length > 0
-    ? (ratedOrders.reduce((sum, o) => sum + o.deliveryRating, 0) / ratedOrders.length).toFixed(1)
-    : 'New';
+  const avgRating = riderProfile?.rating ? parseFloat(riderProfile.rating).toFixed(1) : 'New';
 
   // Live Location Tracking (Compulsory)
   useEffect(() => {
@@ -199,8 +216,11 @@ export default function DeliveryDashboardScreen({ navigation }) {
       if (!provider.locationServicesEnabled) {
         Alert.alert(
           'GPS Signal Lost',
-          'Your GPS was turned off. The app will now close for security reasons.',
-          [{ text: 'Exit App', onPress: () => BackHandler.exitApp() }],
+          'Your GPS was turned off. Please turn it back on to continue, or log out.',
+          [
+            { text: 'Log Out', onPress: async () => { await auth.signOut(); } },
+            { text: 'Exit App', onPress: () => BackHandler.exitApp() }
+          ],
           { cancelable: false }
         );
       }
@@ -232,18 +252,37 @@ export default function DeliveryDashboardScreen({ navigation }) {
     return myCompletedOrders;
   };
 
-  const handleAcceptDelivery = async (orderId) => {
+  const handleAcceptDelivery = async (order) => {
     try {
-      await updateDoc(doc(db, 'orders', orderId), {
-        status: 'Driver Assigned',
+      const updates = {
         riderId: currentUser.uid,
         driverName: riderProfile?.name || currentUser.displayName || 'Delivery Partner',
+        driverPhone: riderProfile?.phone || riderProfile?.email || '',
+        driverPhoto: riderProfile?.profileImage || riderProfile?.profilePhoto || riderProfile?.photoUrl || riderProfile?.documents?.photo || currentUser?.photoURL || '',
         acceptedAt: Date.now(),
-      });
+      };
+      
+      // If the pharmacy already marked it Ready for Pickup, change status. Otherwise, just assign rider.
+      if (order.status === 'Ready for Pickup') {
+        updates.status = 'Driver Assigned';
+      }
+
+      await updateDoc(doc(db, 'orders', order.id), updates);
       setAcceptModalVisible(true);
       setActiveTab('Active');
     } catch (error) {
       Alert.alert('Error', 'Failed to accept delivery. Please try again.');
+    }
+  };
+
+  const handleArrivedAtPickup = async (orderId) => {
+    try {
+      await updateDoc(doc(db, 'orders', orderId), {
+        status: 'Driver Arrived',
+        driverArrivedAt: Date.now(),
+      });
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update status. Please try again.');
     }
   };
 
@@ -301,6 +340,11 @@ export default function DeliveryDashboardScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }} 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      >
       <View style={{ height: 0, width: 0, opacity: 0 }}>
         <WebView
           ref={webViewRef}
@@ -330,10 +374,23 @@ export default function DeliveryDashboardScreen({ navigation }) {
             </View>
           </View>
         </View>
-        <View style={styles.earningsChip}>
-          <IndianRupee color="#10B981" size={14} />
-          <Text style={styles.earningsChipText}>{myCompletedOrders.reduce((sum, order) => sum + getEarning(order), 0)}</Text>
-          <Text style={styles.earningsChipLabel}> today</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <View style={styles.earningsChip}>
+            <IndianRupee color="#10B981" size={14} />
+            <Text style={styles.earningsChipText}>{myCompletedOrders.reduce((sum, order) => sum + getEarning(order), 0)}</Text>
+            <Text style={styles.earningsChipLabel}> today</Text>
+          </View>
+          <TouchableOpacity 
+            style={{ position: 'relative', backgroundColor: '#F3F4F6', padding: 8, borderRadius: 20 }}
+            onPress={() => navigation.navigate('Notifications')}
+          >
+            <Bell color="#4B5563" size={20} />
+            {unreadCount > 0 && (
+              <View style={{ position: 'absolute', top: -2, right: -2, backgroundColor: '#EF4444', borderRadius: 10, minWidth: 18, height: 18, justifyContent: 'center', alignItems: 'center' }}>
+                <Text style={{ color: '#fff', fontSize: 10, fontWeight: 'bold' }}>{unreadCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -392,7 +449,11 @@ export default function DeliveryDashboardScreen({ navigation }) {
           renderItem={({ item }) => {
             if (activeTab === 'Completed') {
               return (
-                <View style={[styles.orderCard, { borderColor: '#E5E7EB', borderWidth: 1 }]}>
+                <TouchableOpacity 
+                  style={[styles.orderCard, { borderColor: '#E5E7EB', borderWidth: 1 }]}
+                  onPress={() => setSelectedDeliveryOrder(item)}
+                  activeOpacity={0.9}
+                >
                   <View style={styles.cardHeader}>
                     <Text style={styles.orderId}>#{item.numericId || item.id.slice(-6).toUpperCase()}</Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -433,7 +494,7 @@ export default function DeliveryDashboardScreen({ navigation }) {
                   <Text style={{ fontSize: 12, color: '#9CA3AF', textAlign: 'center', marginTop: 8 }}>
                     Completed on {new Date(item.deliveredAt || item.createdAt).toLocaleDateString()}
                   </Text>
-                </View>
+                </TouchableOpacity>
               );
             }
 
@@ -489,7 +550,7 @@ export default function DeliveryDashboardScreen({ navigation }) {
                   ) : (
                     <TouchableOpacity
                       style={styles.acceptBtn}
-                      onPress={() => handleAcceptDelivery(item.id)}
+                      onPress={() => handleAcceptDelivery(item)}
                     >
                       <Navigation color="#fff" size={18} style={{ marginRight: 8 }} />
                       <Text style={styles.acceptBtnText}>Accept Delivery</Text>
@@ -513,12 +574,21 @@ export default function DeliveryDashboardScreen({ navigation }) {
                     <View style={styles.activeActions}>
                       <TouchableOpacity
                         style={[styles.actionBtn, { backgroundColor: '#EFF6FF', flex: 1, marginRight: 8, borderWidth: 1, borderColor: '#BFDBFE' }]}
-                        onPress={() => navigation.navigate('Map', { order: item, pharmacyName: pharmacyMap[item.pharmacyId]?.name, pharmacyAddress: pharmacyMap[item.pharmacyId]?.address })}
+                        onPress={() => navigation.navigate('Map', { order: item, pharmacyName: pharmacyMap[item.pharmacyId]?.name, pharmacyAddress: pharmacyMap[item.pharmacyId]?.address, pharmacyLocation: pharmacyMap[item.pharmacyId]?.location })}
                       >
                         <Navigation color="#2563EB" size={16} />
                         <Text style={[styles.actionBtnText, { color: '#2563EB' }]}> View Map</Text>
                       </TouchableOpacity>
-                      {item.status !== 'Picked Up' && item.status !== 'Out for Delivery' && (
+                      {item.status === 'Driver Assigned' && (
+                        <TouchableOpacity
+                          style={[styles.actionBtn, { backgroundColor: '#8B5CF6', flex: 1 }]}
+                          onPress={() => handleArrivedAtPickup(item.id)}
+                        >
+                          <MapPin color="#fff" size={16} />
+                          <Text style={styles.actionBtnText}> Arrived at Pickup</Text>
+                        </TouchableOpacity>
+                      )}
+                      {(item.status === 'Driver Arrived') && (
                         <TouchableOpacity
                           style={[styles.actionBtn, { backgroundColor: '#F59E0B', flex: 1 }]}
                           onPress={() => handleInitiateDelivery(item)}
@@ -533,20 +603,17 @@ export default function DeliveryDashboardScreen({ navigation }) {
                       <View style={{ backgroundColor: '#F0FDF4', padding: 16, borderRadius: 12, marginTop: 16, borderWidth: 1, borderColor: '#A7F3D0' }}>
                         <Text style={{ fontSize: 13, color: '#047857', fontWeight: 'bold', marginBottom: 8 }}>DELIVER PACKAGE</Text>
                         <Text style={{ fontSize: 12, color: '#065F46', marginBottom: 12 }}>Enter the 6-digit Customer PIN to complete the delivery.</Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                          <TextInput
-                            style={{ flex: 1, backgroundColor: '#fff', borderWidth: 1, borderColor: '#A7F3D0', borderRadius: 8, padding: 12, fontSize: 16, textAlign: 'center', letterSpacing: 4, marginRight: 12 }}
-                            placeholder="Enter PIN"
-                            maxLength={6}
-                            autoCapitalize="characters"
+                        <View style={{ flexDirection: 'column', alignItems: 'center' }}>
+                          <OtpInput
+                            length={6}
                             value={dropoffOtpInputs[item.id] || ''}
                             onChangeText={(t) => setDropoffOtpInputs(prev => ({ ...prev, [item.id]: t }))}
                           />
                           <TouchableOpacity
-                            style={{ backgroundColor: '#10B981', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 8, justifyContent: 'center' }}
+                            style={{ backgroundColor: '#10B981', paddingHorizontal: 32, paddingVertical: 14, borderRadius: 12, justifyContent: 'center', width: '100%', alignItems: 'center', marginTop: 12 }}
                             onPress={() => handleConfirmOtp(item, dropoffOtpInputs[item.id])}
                           >
-                            <Text style={{ color: '#fff', fontWeight: 'bold' }}>Deliver</Text>
+                            <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>Deliver</Text>
                           </TouchableOpacity>
                         </View>
                       </View>
@@ -558,6 +625,8 @@ export default function DeliveryDashboardScreen({ navigation }) {
           }}
         />
       )}
+
+      {/* Recent Deliveries Section - removed, ordering is done in FlatList */}
 
       {/* Modern Acceptance Toast Modal */}
       <Modal visible={acceptModalVisible} transparent={true} animationType="fade">
@@ -575,6 +644,58 @@ export default function DeliveryDashboardScreen({ navigation }) {
             >
               <Text style={styles.toastOkBtnText}>Got it!</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Order Detail Modal for delivery partner */}
+      <Modal visible={!!selectedDeliveryOrder} transparent animationType="slide">
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '85%', padding: 24 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#111827' }}>Delivery Details</Text>
+              <TouchableOpacity onPress={() => setSelectedDeliveryOrder(null)}>
+                <XCircle color="#EF4444" size={28} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
+              <Text style={{ fontSize: 12, color: '#6B7280', fontWeight: 'bold', textTransform: 'uppercase', marginTop: 8 }}>Order ID</Text>
+              <Text style={{ fontSize: 16, color: '#111827', marginTop: 4, fontWeight: '500' }}>#{selectedDeliveryOrder?.numericId || selectedDeliveryOrder?.id?.slice(-6).toUpperCase()}</Text>
+
+              <Text style={{ fontSize: 12, color: '#6B7280', fontWeight: 'bold', textTransform: 'uppercase', marginTop: 16 }}>Status</Text>
+              <Text style={{ fontSize: 16, color: '#111827', marginTop: 4, fontWeight: '500' }}>{selectedDeliveryOrder?.status}</Text>
+
+              <Text style={{ fontSize: 12, color: '#6B7280', fontWeight: 'bold', textTransform: 'uppercase', marginTop: 16 }}>Pickup From</Text>
+              <Text style={{ fontSize: 16, color: '#111827', marginTop: 4, fontWeight: '500' }}>{pharmacyMap[selectedDeliveryOrder?.pharmacyId]?.name || 'Pharmacy'}</Text>
+
+              <Text style={{ fontSize: 12, color: '#6B7280', fontWeight: 'bold', textTransform: 'uppercase', marginTop: 16 }}>Delivered To</Text>
+              <Text style={{ fontSize: 16, color: '#111827', marginTop: 4, fontWeight: '500' }}>{selectedDeliveryOrder?.customerName || 'Customer'}</Text>
+              <Text style={{ fontSize: 14, color: '#6B7280', marginTop: 2 }}>{selectedDeliveryOrder?.address}</Text>
+
+              <Text style={{ fontSize: 12, color: '#6B7280', fontWeight: 'bold', textTransform: 'uppercase', marginTop: 16 }}>Items</Text>
+              <View style={{ backgroundColor: '#F9FAFB', borderRadius: 12, padding: 16, marginTop: 8, borderWidth: 1, borderColor: '#E5E7EB' }}>
+                {(selectedDeliveryOrder?.items || []).map((item, idx) => (
+                  <View key={idx} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
+                    <Text style={{ fontSize: 14, color: '#4B5563' }}>{item.qty} x {item.name}</Text>
+                    <Text style={{ fontSize: 14, color: '#111827', fontWeight: '600' }}>₹{(item.price * item.qty).toFixed(2)}</Text>
+                  </View>
+                ))}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, marginTop: 8, borderTopWidth: 1, borderTopColor: '#E5E7EB' }}>
+                  <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#111827' }}>Total</Text>
+                  <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#111827' }}>₹{(selectedDeliveryOrder?.totalAmount || 0).toFixed(2)}</Text>
+                </View>
+              </View>
+
+              <Text style={{ fontSize: 12, color: '#6B7280', fontWeight: 'bold', textTransform: 'uppercase', marginTop: 16 }}>Your Rating</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+                {[1,2,3,4,5].map(i => (
+                  <Star key={i} color="#F59E0B" size={22} fill={i <= (selectedDeliveryOrder?.deliveryRating || 0) ? '#F59E0B' : 'none'} style={{ marginRight: 4 }} />
+                ))}
+                <Text style={{ marginLeft: 8, fontSize: 16, fontWeight: 'bold', color: '#374151' }}>
+                  {typeof selectedDeliveryOrder?.deliveryRating === 'number' ? selectedDeliveryOrder.deliveryRating.toFixed(1) : 'Not yet rated'}
+                </Text>
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -597,6 +718,7 @@ export default function DeliveryDashboardScreen({ navigation }) {
           </View>
         </View>
       )}
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

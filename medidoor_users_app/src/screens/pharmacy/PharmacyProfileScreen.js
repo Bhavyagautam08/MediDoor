@@ -5,8 +5,9 @@ import {
 } from 'react-native';
 import { Store, User, LogOut, TrendingUp, Clock, MapPin } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db, auth } from '../../firebaseConfig';
+import { checkIsOpen as checkIsOpenUtil } from '../../utils/pharmacyUtils';
 import MapPickerModal from '../../components/MapPickerModal';
 
 const ALL_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -18,6 +19,7 @@ const TIME_SLOTS = [
 
 export default function PharmacyProfileScreen({ navigation }) {
   const [profileData, setProfileData] = useState(null);
+
   const [loading, setLoading] = useState(true);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showMapPicker, setShowMapPicker] = useState(false);
@@ -31,39 +33,41 @@ export default function PharmacyProfileScreen({ navigation }) {
     open: false,
     latitude: 0,
     longitude: 0,
+    storeDiscount: '',
   });
 
   useEffect(() => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+
     const fetchProfile = async () => {
-      const currentUser = auth.currentUser;
-      if (!currentUser) return;
       try {
         const snap = await getDoc(doc(db, 'pharmacies', currentUser.uid));
         if (snap.exists()) {
-          setProfileData({ ...snap.data(), email: currentUser.email });
+          setProfileData({ ...snap.data(), email: currentUser.email, id: currentUser.uid });
         } else {
-          setProfileData({ email: currentUser.email, name: 'Pharmacy Partner', role: 'Pharmacy Admin' });
+          setProfileData({ email: currentUser.email, name: 'Pharmacy Partner', role: 'Pharmacy Admin', id: currentUser.uid });
         }
       } catch (err) {
         console.error(err);
         Alert.alert('Error', String(err?.message || 'An unexpected error occurred'));
-      } finally {
-        setLoading(false);
       }
     };
-    fetchProfile();
+
+    fetchProfile().finally(() => setLoading(false));
   }, []);
 
   const openEditModal = () => {
     setEditForm({
       name: profileData?.name || '',
       address: profileData?.address || '',
-      openTime: profileData?.openTime || '09:00 AM',
-      closeTime: profileData?.closeTime || '09:00 PM',
+      openTime: profileData?.openTime || '',
+      closeTime: profileData?.closeTime || '',
       openDays: profileData?.openDays || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
       open: profileData?.open || false,
       latitude: profileData?.latitude || 0,
       longitude: profileData?.longitude || 0,
+      storeDiscount: profileData?.storeDiscount ? String(profileData.storeDiscount) : '',
     });
     setShowEditModal(true);
   };
@@ -82,6 +86,10 @@ export default function PharmacyProfileScreen({ navigation }) {
       Alert.alert('Error', 'Business name cannot be empty.');
       return;
     }
+    if (!editForm.openTime || !editForm.closeTime) {
+      Alert.alert('Error', 'Please select both opening and closing times.');
+      return;
+    }
     setSaving(true);
     try {
       const currentUser = auth.currentUser;
@@ -94,6 +102,7 @@ export default function PharmacyProfileScreen({ navigation }) {
         open: editForm.open,
         latitude: editForm.latitude,
         longitude: editForm.longitude,
+        storeDiscount: editForm.storeDiscount ? Number(editForm.storeDiscount) : 0,
         role: 'Pharmacy Admin',
       };
       await updateDoc(doc(db, 'pharmacies', currentUser.uid), dataToSave);
@@ -123,7 +132,7 @@ export default function PharmacyProfileScreen({ navigation }) {
   if (loading) {
     return (
       <SafeAreaView style={styles.center}>
-        <ActivityIndicator size="large" color="#00C853" />
+        <ActivityIndicator size="large" color="#0D9494" />
       </SafeAreaView>
     );
   }
@@ -136,48 +145,26 @@ export default function PharmacyProfileScreen({ navigation }) {
     ? profileData.openDays.join(', ')
     : 'Not Set';
 
-  const checkIsOpen = () => {
-    if (!profileData?.openTime || !profileData?.closeTime) return false;
-    const todayStr = new Date().toLocaleDateString('en-US', { weekday: 'short' });
-    if (!profileData?.openDays?.includes(todayStr)) return false;
-
-    const parseTime = (timeStr) => {
-      if (!timeStr) return 0;
-      const [time, period] = timeStr.split(' ');
-      let [hours, minutes] = time.split(':').map(Number);
-      if (period === 'PM' && hours !== 12) hours += 12;
-      if (period === 'AM' && hours === 12) hours = 0;
-      return hours * 60 + minutes;
-    };
-
-    const now = new Date();
-    const currentMins = now.getHours() * 60 + now.getMinutes();
-    const openMins = parseTime(profileData.openTime);
-    const closeMins = parseTime(profileData.closeTime);
-
-    if (closeMins < openMins) return currentMins >= openMins || currentMins <= closeMins;
-    return currentMins >= openMins && currentMins <= closeMins;
-  };
-
-  const isStoreOpen = checkIsOpen();
+  const isStoreOpen = checkIsOpenUtil(profileData);
 
   return (
     <SafeAreaView style={styles.container}>
-      <LinearGradient colors={['#00C853', '#009624']} style={styles.headerBg}>
+      <LinearGradient colors={['#0D9494', '#003366']} style={styles.headerBg}>
         <View style={styles.headerContent}>
           <View style={styles.avatarCircle}>
             <Text style={styles.avatarText}>{initials}</Text>
           </View>
           <Text style={styles.pharmacyName}>{profileData?.name || 'Pharmacy Partner'}</Text>
           <Text style={styles.pharmacyEmail}>{profileData?.email}</Text>
+          <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 14, marginBottom: 16 }}>ID: #{profileData?.medidoorId || profileData?.id?.slice(-8).toUpperCase() || 'UNKNOWN'}</Text>
           <View style={{flexDirection: 'row', gap: 12}}>
             <View style={styles.partnerBadge}>
-              <Store color="#00C853" size={14} />
+              <Store color="#0D9494" size={14} />
               <Text style={styles.partnerBadgeText}>Verified Partner</Text>
             </View>
             <View style={[styles.partnerBadge, {backgroundColor: '#FEF3C7'}]}>
               <Text style={{ fontSize: 13, fontWeight: 'bold', color: '#D97706' }}>
-                ★ {profileData?.rating ? profileData.rating.toFixed(1) : 'New'}
+                ★ {profileData?.rating ? parseFloat(profileData.rating).toFixed(1) : 'New'}
               </Text>
             </View>
           </View>
@@ -195,10 +182,20 @@ export default function PharmacyProfileScreen({ navigation }) {
           </View>
           <View style={styles.divider} />
           <View style={styles.infoRow}>
-            <TrendingUp color="#6B7280" size={20} />
+            <MapPin color="#6B7280" size={20} />
             <View style={styles.infoTextGroup}>
               <Text style={styles.infoLabel}>Address</Text>
               <Text style={styles.infoValue}>{profileData?.address || 'Not Set'}</Text>
+            </View>
+          </View>
+          <View style={styles.divider} />
+          <View style={styles.infoRow}>
+            <TrendingUp color="#0D9494" size={20} />
+            <View style={styles.infoTextGroup}>
+              <Text style={styles.infoLabel}>Storewide Discount</Text>
+              <Text style={[styles.infoValue, { color: profileData?.storeDiscount ? '#0D9494' : '#111827' }]}>
+                {profileData?.storeDiscount ? `${profileData.storeDiscount}% OFF on all orders` : 'No Discount Offered'}
+              </Text>
             </View>
           </View>
           <View style={styles.divider} />
@@ -212,10 +209,10 @@ export default function PharmacyProfileScreen({ navigation }) {
           </View>
           <View style={styles.divider} />
           <View style={styles.infoRow}>
-            <Text style={{ fontSize: 20, color: isStoreOpen ? '#00C853' : '#EF4444' }}>●</Text>
+            <Text style={{ fontSize: 20, color: isStoreOpen ? '#0D9494' : '#EF4444' }}>●</Text>
             <View style={styles.infoTextGroup}>
               <Text style={styles.infoLabel}>Store Status</Text>
-              <Text style={[styles.infoValue, { color: isStoreOpen ? '#00C853' : '#EF4444' }]}>
+              <Text style={[styles.infoValue, { color: isStoreOpen ? '#0D9494' : '#EF4444' }]}>
                 {isStoreOpen ? 'OPEN NOW' : 'CLOSED'}
               </Text>
             </View>
@@ -272,6 +269,15 @@ export default function PharmacyProfileScreen({ navigation }) {
                   {editForm.address || "Select on map"}
                 </Text>
               </TouchableOpacity>
+
+              <Text style={styles.fieldLabel}>Storewide Discount % (Optional)</Text>
+              <TextInput
+                style={styles.fieldInput}
+                placeholder="e.g. 5 or 10 (Discount on total bill)"
+                keyboardType="numeric"
+                value={editForm.storeDiscount}
+                onChangeText={v => setEditForm({ ...editForm, storeDiscount: v })}
+              />
 
               <Text style={styles.fieldLabel}>Opening Hours</Text>
               <View style={{ marginBottom: 16 }}>
@@ -378,7 +384,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
     paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
   },
-  partnerBadgeText: { fontSize: 12, fontWeight: 'bold', color: '#00C853', marginLeft: 6 },
+  partnerBadgeText: { fontSize: 12, fontWeight: 'bold', color: '#0D9494', marginLeft: 6 },
   content: { padding: 20 },
   infoCard: {
     backgroundColor: '#fff', borderRadius: 16, padding: 20, marginBottom: 20,
@@ -418,7 +424,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
     backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB',
   },
-  dayChipActive: { backgroundColor: '#00C853', borderColor: '#00C853' },
+  dayChipActive: { backgroundColor: '#0D9494', borderColor: '#0D9494' },
   dayChipText: { fontSize: 13, fontWeight: '600', color: '#6B7280' },
   dayChipTextActive: { color: '#fff' },
   toggleRow: {
@@ -426,14 +432,14 @@ const styles = StyleSheet.create({
     marginBottom: 24, marginTop: 4,
   },
   toggleBtn: { width: 50, height: 28, borderRadius: 14, backgroundColor: '#E5E7EB', padding: 2 },
-  toggleBtnActive: { backgroundColor: '#00C853' },
+  toggleBtnActive: { backgroundColor: '#0D9494' },
   toggleKnob: {
     width: 24, height: 24, borderRadius: 12, backgroundColor: '#FFF',
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2, shadowRadius: 1, elevation: 2,
   },
   toggleKnobActive: { transform: [{ translateX: 22 }] },
-  saveBtn: { backgroundColor: '#00C853', padding: 16, borderRadius: 12, alignItems: 'center', marginBottom: 12 },
+  saveBtn: { backgroundColor: '#0D9494', padding: 16, borderRadius: 12, alignItems: 'center', marginBottom: 12 },
   saveBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
   cancelBtn: { backgroundColor: '#F3F4F6', padding: 16, borderRadius: 12, alignItems: 'center' },
   cancelBtnText: { color: '#6B7280', fontSize: 16, fontWeight: 'bold' },
@@ -441,7 +447,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12,
     backgroundColor: '#F3F4F6', marginRight: 8, borderWidth: 1, borderColor: '#E5E7EB'
   },
-  timeChipActive: { backgroundColor: '#00C853', borderColor: '#00C853' },
+  timeChipActive: { backgroundColor: '#0D9494', borderColor: '#0D9494' },
   timeChipText: { fontSize: 14, color: '#4B5563', fontWeight: '500' },
   timeChipTextActive: { color: '#fff', fontWeight: 'bold' }
 });

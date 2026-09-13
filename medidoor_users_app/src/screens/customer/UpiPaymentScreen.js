@@ -29,7 +29,7 @@ export default function UpiPaymentScreen({ route, navigation }) {
     const { url } = request;
     
     // 1. Detect our custom success redirect from the Cloud Function webhook
-    if (url.includes('medidoor://payment-complete')) {
+    if (url.includes('axoro://payment-complete')) {
       navigation.replace('LiveTracking', { orderId: orderDocId });
       return false; 
     }
@@ -79,8 +79,8 @@ export default function UpiPaymentScreen({ route, navigation }) {
         />
         {loading && (
           <View style={styles.loader}>
-            <ActivityIndicator size="large" color="#00C853" />
-            <Text style={{ marginTop: 12, color: '#00C853', fontWeight: 'bold' }}>Loading Secure Gateway...</Text>
+            <ActivityIndicator size="large" color="#0D9494" />
+            <Text style={{ marginTop: 12, color: '#0D9494', fontWeight: 'bold' }}>Loading Secure Gateway...</Text>
           </View>
         )}
       </View>

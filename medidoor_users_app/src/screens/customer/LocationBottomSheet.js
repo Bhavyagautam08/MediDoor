@@ -395,10 +395,10 @@ export default function LocationBottomSheet({
               }}
             >
               <View style={styles.iconWrap}>
-                <Crosshair color="#00C853" size={20} />
+                <Crosshair color="#0D9494" size={20} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.addressTag, { color: '#00C853' }]}>Use Current Location</Text>
+                <Text style={[styles.addressTag, { color: '#0D9494' }]}>Use Current Location</Text>
                 <Text style={styles.addressDetails} numberOfLines={1}>Using GPS</Text>
               </View>
               <ChevronRight color="#D1D5DB" size={18} />

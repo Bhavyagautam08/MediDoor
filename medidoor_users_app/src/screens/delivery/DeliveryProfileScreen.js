@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Platform, ActivityIndicator, Alert } from 'react-native';
 import { User, LogOut, Bike, Star } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db, auth } from '../../firebaseConfig';
 import { calculateDistance } from '../../utils/distance';
 
@@ -18,47 +18,50 @@ export default function DeliveryProfileScreen({ navigation }) {
   const [profileData, setProfileData] = useState(null);
   const [totalDeliveries, setTotalDeliveries] = useState(0);
   const [totalEarnings, setTotalEarnings] = useState(0);
-  const [averageRating, setAverageRating] = useState('New');
+
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchProfile = async () => {
-      const currentUser = auth.currentUser;
-      if (!currentUser) return;
-      try {
-        const [snap, ordersSnap] = await Promise.all([
-          getDoc(doc(db, 'delivery_agents', currentUser.uid)),
-          getDocs(query(collection(db, 'orders'), where('riderId', '==', currentUser.uid), where('status', '==', 'Delivered')))
-        ]);
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
 
+    const fetchProfile = async () => {
+      try {
+        const snap = await getDoc(doc(db, 'delivery_agents', currentUser.uid));
         if (snap.exists()) {
           setProfileData({ ...snap.data(), email: currentUser.email });
         } else {
           setProfileData({ email: currentUser.email, name: 'Delivery Agent' });
         }
-        setTotalDeliveries(ordersSnap.size);
-
-        let totalRating = 0;
-        let ratingCount = 0;
-        let earned = 0;
-        ordersSnap.forEach(docSnap => {
-          const d = docSnap.data();
-          const rating = d.deliveryRating;
-          if (typeof rating === 'number') {
-            totalRating += rating;
-            ratingCount++;
-          }
-          earned += getEarning(d);
-        });
-        setTotalEarnings(earned);
-        setAverageRating(ratingCount > 0 ? (totalRating / ratingCount).toFixed(1) : 'New');
       } catch (err) {
         console.error(err); Alert.alert("Error", String(err || "An unexpected error occurred"));
       } finally {
         setLoading(false);
       }
     };
+
+    const ordersQuery = query(
+      collection(db, 'orders'),
+      where('riderId', '==', currentUser.uid),
+      where('status', '==', 'Delivered')
+    );
+
+    const unsubscribeOrders = onSnapshot(ordersQuery, (snapshot) => {
+      let earned = 0;
+      snapshot.forEach(docSnap => {
+        const d = docSnap.data();
+        earned += getEarning(d);
+      });
+      setTotalDeliveries(snapshot.size);
+      setTotalEarnings(earned);
+    }, (err) => {
+      if (err.code !== 'permission-denied') {
+        console.error('Delivery profile orders listener error:', err);
+      }
+    });
+
     fetchProfile();
+    return () => unsubscribeOrders();
   }, []);
 
   const handleLogout = async () => {
@@ -106,7 +109,7 @@ export default function DeliveryProfileScreen({ navigation }) {
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{averageRating}{averageRating !== 'New' ? ' ★' : ''}</Text>
+              <Text style={styles.statValue}>★ {profileData?.rating ? parseFloat(profileData.rating).toFixed(1) : 'New'}</Text>
               <Text style={styles.statLabel}>Rating</Text>
             </View>
           </View>

@@ -1,0 +1,60 @@
+import { initializeApp } from 'firebase/app';
+import { getFirestore, collection, getDocs, doc, setDoc } from 'firebase/firestore';
+
+const firebaseConfig = {
+  apiKey: "[REDACTED]",
+  authDomain: "medidoor-f8af9.firebaseapp.com",
+  projectId: "medidoor-f8af9",
+  storageBucket: "medidoor-f8af9.firebasestorage.app",
+  messagingSenderId: "124078476328",
+  appId: "1:124078476328:web:a48af81635045ea7d6791d"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+async function migrateRatings() {
+  console.log("Starting rating migration...");
+  const ordersSnap = await getDocs(collection(db, 'orders'));
+  
+  const pharmacyRatings = {};
+  const driverRatings = {};
+
+  ordersSnap.forEach(docSnap => {
+    const data = docSnap.data();
+    
+    // Pharmacy
+    if (data.pharmacyId && typeof data.serviceRating === 'number' && data.serviceRating > 0) {
+      if (!pharmacyRatings[data.pharmacyId]) pharmacyRatings[data.pharmacyId] = { total: 0, count: 0 };
+      pharmacyRatings[data.pharmacyId].total += data.serviceRating;
+      pharmacyRatings[data.pharmacyId].count += 1;
+    }
+
+    // Driver
+    if (data.riderId && typeof data.deliveryRating === 'number' && data.deliveryRating > 0) {
+      if (!driverRatings[data.riderId]) driverRatings[data.riderId] = { total: 0, count: 0 };
+      driverRatings[data.riderId].total += data.deliveryRating;
+      driverRatings[data.riderId].count += 1;
+    }
+  });
+
+  for (const [pId, stats] of Object.entries(pharmacyRatings)) {
+    if (stats.count > 0) {
+      const avg = (stats.total / stats.count).toFixed(1);
+      await setDoc(doc(db, 'pharmacies', pId), { rating: avg, reviewCount: stats.count, totalRating: stats.total }, { merge: true });
+      console.log(`Updated pharmacy ${pId} -> rating: ${avg}`);
+    }
+  }
+
+  for (const [dId, stats] of Object.entries(driverRatings)) {
+    if (stats.count > 0) {
+      const avg = (stats.total / stats.count).toFixed(1);
+      await setDoc(doc(db, 'delivery_agents', dId), { rating: avg, reviewCount: stats.count, totalRating: stats.total }, { merge: true });
+      console.log(`Updated driver ${dId} -> rating: ${avg}`);
+    }
+  }
+
+  console.log("Migration complete!");
+}
+
+migrateRatings().catch(console.error);

@@ -1,37 +1,70 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Bell } from 'lucide-react-native';
 import { auth, db } from '../../firebaseConfig';
-import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, writeBatch, doc } from 'firebase/firestore';
+import { getUserRole, getCollection } from '../../services/authService';
 
 export default function NotificationsScreen({ navigation }) {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const currentUser = auth.currentUser;
-    if (!currentUser) {
-      setLoading(false);
-      return;
-    }
+    let unsubscribe = () => {};
+    
+    const setupNotifications = async () => {
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        setLoading(false);
+        return;
+      }
 
-    const q = query(
-      collection(db, 'customers', currentUser.uid, 'notifications'),
-      orderBy('createdAt', 'desc')
-    );
+      try {
+        const { role } = await getUserRole(currentUser.uid);
+        const collectionName = getCollection(role);
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const notes = [];
-      snapshot.forEach((doc) => {
-        notes.push({ id: doc.id, ...doc.data() });
-      });
-      setNotifications(notes);
-      setLoading(false);
-    }, (error) => {
-      console.error("Error fetching notifications:", error);
-      setLoading(false);
-    });
+        const q = query(
+          collection(db, collectionName, currentUser.uid, 'notifications'),
+          orderBy('createdAt', 'desc')
+        );
+
+        unsubscribe = onSnapshot(q, async (snapshot) => {
+          const notes = [];
+          const batch = writeBatch(db);
+          let hasUnread = false;
+
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            notes.push({ id: docSnap.id, ...data });
+            
+            if (data.read === false) {
+              hasUnread = true;
+              batch.update(docSnap.ref, { read: true });
+            }
+          });
+          
+          setNotifications(notes);
+          setLoading(false);
+          
+          if (hasUnread) {
+            try {
+              await batch.commit();
+            } catch (err) {
+              console.error("Error marking notifications as read:", err);
+            }
+          }
+        }, (error) => {
+          console.error("Error fetching notifications:", error);
+          setLoading(false);
+        });
+      } catch (error) {
+        console.error("Error setting up notifications:", error);
+        setLoading(false);
+      }
+    };
+    
+    setupNotifications();
 
     return () => unsubscribe();
   }, []);
@@ -64,7 +97,7 @@ export default function NotificationsScreen({ navigation }) {
       <ScrollView contentContainerStyle={styles.content}>
         {loading ? (
           <View style={{ marginTop: 100, alignItems: 'center' }}>
-            <ActivityIndicator size="large" color="#00C853" />
+            <ActivityIndicator size="large" color="#0D9494" />
           </View>
         ) : notifications.length === 0 ? (
           <View style={styles.emptyContainer}>
@@ -75,11 +108,11 @@ export default function NotificationsScreen({ navigation }) {
           notifications.map((note) => (
             <View key={note.id} style={styles.card}>
               <View style={styles.iconContainer}>
-                <Bell color="#00C853" size={20} />
+                <Image source={require('../../../assets/logo.png')} style={{ width: 28, height: 28, borderRadius: 6 }} resizeMode="contain" />
               </View>
               <View style={styles.textContainer}>
                 <Text style={styles.title}>{note.title}</Text>
-                <Text style={styles.message}>{note.message}</Text>
+                <Text style={styles.message}>{note.body || note.message}</Text>
                 <Text style={styles.time}>{formatTime(note.createdAt)}</Text>
               </View>
             </View>

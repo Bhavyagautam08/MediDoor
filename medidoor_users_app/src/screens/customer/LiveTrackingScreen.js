@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Modal, Dimensions, Linking, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Modal, Dimensions, Linking, Alert, Platform, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Phone, MessageSquare, Map as MapIcon, CheckCircle2, Circle, Clock, X, Maximize2, MapPin, Home, Navigation } from 'lucide-react-native';
-import MapView, { Marker } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import MapViewDirections from 'react-native-maps-directions';
 import * as Location from 'expo-location';
 import { doc, getDoc, onSnapshot, updateDoc, collection, addDoc, serverTimestamp, setDoc } from 'firebase/firestore';
@@ -59,19 +59,19 @@ export default function LiveTrackingScreen({ navigation, route }) {
   const [customerLocation, setCustomerLocation] = useState(null);
   const [pharmacyCoords, setPharmacyCoords] = useState(null);
   const [pharmacyDetails, setPharmacyDetails] = useState(null);
-  const [eta, setEta] = useState(15);
+  const [eta, setEta] = useState(null);
   const [isMapExpanded, setIsMapExpanded] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
   const prevStatusRef = React.useRef(null);
-  
+
   useEffect(() => {
     if (orderId === 'N/A') return;
-    
+
     const unsubscribe = onSnapshot(doc(db, 'orders', orderId), async (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         setOrder({ id: docSnap.id, ...data });
-        
+
         if (!pharmacyCoords && data.pharmacyId) {
           const pDoc = await getDoc(doc(db, 'pharmacies', data.pharmacyId));
           if (pDoc.exists()) {
@@ -84,7 +84,7 @@ export default function LiveTrackingScreen({ navigation, route }) {
         }
       }
     });
-    
+
     return () => unsubscribe();
   }, [orderId]);
 
@@ -118,18 +118,14 @@ export default function LiveTrackingScreen({ navigation, route }) {
 
   useEffect(() => {
     (async () => {
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === 'granted') {
-        let location = await Location.getCurrentPositionAsync({});
-        setCustomerLocation({
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude
-        });
+      if (order?.customerLocation) {
+        setCustomerLocation(order.customerLocation);
       } else {
-        setCustomerLocation({ latitude: 28.5450, longitude: 77.3960 }); // Default fallback
+        // Fallback to a distant location so it doesn't overlap the rider during same-device testing
+        setCustomerLocation({ latitude: 28.5200, longitude: 77.4000 });
       }
     })();
-  }, []);
+  }, [order?.customerLocation]);
 
   const handleReorder = async (orderItems) => {
     // If it's a broadcasted prescription order, rebroadcast it
@@ -137,7 +133,7 @@ export default function LiveTrackingScreen({ navigation, route }) {
       try {
         const user = auth.currentUser;
         if (!user) return;
-        
+
         let { status } = await Location.getForegroundPermissionsAsync();
         let coords = null;
         if (status === 'granted') {
@@ -168,14 +164,14 @@ export default function LiveTrackingScreen({ navigation, route }) {
     } else {
       // Normal Cart Order -> Go to Cart
       dispatch(restoreCart(orderItems || []));
-      navigation.navigate('CustomerRoot', { screen: 'Cart' });
+      navigation.navigate('Cart');
     }
   };
 
   if (!order) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F9FAFB' }}>
-        <ActivityIndicator size="large" color="#00C853" />
+        <ActivityIndicator size="large" color="#0D9494" />
         <Text style={{ marginTop: 10, color: '#6B7280' }}>Loading your order...</Text>
       </View>
     );
@@ -186,22 +182,61 @@ export default function LiveTrackingScreen({ navigation, route }) {
   const orderStatus = order.status || 'Placed';
   const isDelivered = orderStatus === 'Delivered';
   const hasRated = order.serviceRating !== undefined || order.deliveryRating !== undefined;
-  
-  const handleRatingSubmit = async ({ rating, review, ratedDishes }) => {
+
+  const handleRatingSubmit = async ({ pharmacyRating, driverRating, review }) => {
     try {
       const orderRef = doc(db, 'orders', order.id);
-      await setDoc(orderRef, {
-        serviceRating: rating || 0,
-        reviewText: review || '',
-        ratedItems: ratedDishes || {}
-      }, { merge: true });
+      const updateData = { reviewText: review || '' };
+
+      if (pharmacyRating > 0) {
+        updateData.serviceRating = pharmacyRating;
+        if (order.pharmacyId) {
+          const pRef = doc(db, 'pharmacies', order.pharmacyId);
+          const pDoc = await getDoc(pRef);
+          if (pDoc.exists()) {
+            const pd = pDoc.data();
+            let currentCount = pd.reviewCount || 0;
+            let currentTotal = pd.totalRating || 0;
+            if (currentCount === 0 && pd.rating) {
+              currentCount = 1;
+              currentTotal = parseFloat(pd.rating);
+            }
+            const newTotal = currentTotal + pharmacyRating;
+            const newCount = currentCount + 1;
+            const newRating = (newTotal / newCount).toFixed(1);
+            await setDoc(pRef, { rating: newRating, reviewCount: newCount, totalRating: newTotal }, { merge: true });
+          }
+        }
+      }
+
+      if (driverRating > 0) {
+        updateData.deliveryRating = driverRating;
+        if (order.riderId) {
+          const dRef = doc(db, 'delivery_agents', order.riderId);
+          const dDoc = await getDoc(dRef);
+          if (dDoc.exists()) {
+            const dd = dDoc.data();
+            let currentCount = dd.reviewCount || 0;
+            let currentTotal = dd.totalRating || 0;
+            if (currentCount === 0 && dd.rating) {
+              currentCount = 1;
+              currentTotal = parseFloat(dd.rating);
+            }
+            const newTotal = currentTotal + driverRating;
+            const newCount = currentCount + 1;
+            const newRating = (newTotal / newCount).toFixed(1);
+            await setDoc(dRef, { rating: newRating, reviewCount: newCount, totalRating: newTotal }, { merge: true });
+          }
+        }
+      }
+
+      await setDoc(orderRef, updateData, { merge: true });
       setShowRatingModal(false);
-      // Optimistic state update (if needed, but onSnapshot should catch it)
     } catch (error) {
       console.error("Failed to submit rating:", error);
     }
   };
-  
+
   const getStatusIndex = () => {
     const s = orderStatus.toLowerCase();
     if (s.includes('out') || s.includes('coming') || s.includes('towards') || s.includes('way') || (s.includes('pick') && !s.includes('ready'))) return 5;
@@ -210,7 +245,7 @@ export default function LiveTrackingScreen({ navigation, route }) {
     if (s.includes('confirm') || s.includes('prepar') || s.includes('accept') || s.includes('verify')) return 2;
     return 1;
   };
-  
+
   const currentStep = getStatusIndex();
   const orderDate = new Date(order.createdAt);
   const timeString = orderDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -225,290 +260,243 @@ export default function LiveTrackingScreen({ navigation, route }) {
   const grandTotal = order.totalAmount || (subtotal + deliveryFee + serviceFee);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      {/* Dynamic Header */}
-      <View style={styles.header}>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', flex: 1 }}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 4, marginRight: 12 }}>
-            <ArrowLeft color="#111827" size={24} />
-          </TouchableOpacity>
-          {isDelivered ? (
-            <View>
-              <Text style={styles.headerTitle}>ORDER #{shortOrderId}</Text>
-              <Text style={styles.headerSubtitle}>Delivered , {numItems} Item{numItems > 1 ? 's' : ''} , ₹{grandTotal}</Text>
-            </View>
-          ) : (
-            <View style={{ justifyContent: 'center', height: 32 }}>
-              <Text style={styles.headerTitle}>Order Summary</Text>
-            </View>
-          )}
-        </View>
-        <TouchableOpacity style={styles.helpBtn}>
-          <Text style={styles.helpBtnText}>HELP</Text>
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: isDelivered ? 100 : 40 }}>
-        
-        {isDelivered ? (
-          /* ================= DELIVERED UI (Historical View) ================= */
-          <View style={styles.historicalWrapper}>
-            {/* Timeline */}
-            <View style={styles.histTimeline}>
-              <View style={styles.histRow}>
-                <MapPin color="#EA580C" size={20} />
-                <View style={styles.histTextContainer}>
-                  <Text style={styles.histTitle}>{pharmacyDetails?.name || order.pharmacyName || 'Pharmacy Partner'}</Text>
-                  <Text style={styles.histSub}>{pharmacyDetails?.address || order.pharmacyAddress || 'Local Address'}</Text>
-                </View>
-              </View>
-              
-              <View style={styles.histDottedLine} />
-              
-              <View style={styles.histRow}>
-                <Home color="#4B5563" size={20} />
-                <View style={styles.histTextContainer}>
-                  <Text style={styles.histTitle}>Home</Text>
-                  <Text style={styles.histSub}>{order.deliveryAddress || order.customerAddress || order.address || 'Your Address'}</Text>
-                </View>
-              </View>
-              
-              <View style={styles.histSolidLine} />
-              
-              <View style={styles.histRow}>
-                <CheckCircle2 color="#10B981" size={20} />
-                <View style={[styles.histTextContainer, { flex: 1 }]}>
-                  <Text style={styles.histSub}>Order delivered on {fullDateStr} by {order.driverName || 'Partner'}</Text>
-                </View>
-                <View style={styles.onTimeBadge}><Text style={styles.onTimeText}>ON TIME</Text></View>
+    <View style={styles.mainContainer}>
+      {isDelivered ? (
+        <SafeAreaView style={styles.safeArea}>
+          <View style={styles.header}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', flex: 1 }}>
+              <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 4, marginRight: 12 }}>
+                <ArrowLeft color="#111827" size={24} />
+              </TouchableOpacity>
+              <View>
+                <Text style={styles.headerTitle}>ORDER #{shortOrderId}</Text>
+                <Text style={styles.headerSubtitle}>Delivered , {numItems} Item{numItems > 1 ? 's' : ''} , ₹{grandTotal}</Text>
               </View>
             </View>
-
-            <View style={styles.histDivider} />
-
-            {/* In-Depth Bill Details */}
-            <View style={styles.billDetailsContainer}>
-              <Text style={styles.billDetailsHeader}>BILL DETAILS</Text>
-              
-              {order.items && order.items.map((item, index) => (
-                <View key={index} style={styles.billItemRow}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <Text style={styles.billItemName}>{item.name} x {item.qty}</Text>
-                  </View>
-                  <Text style={styles.billItemPrice}>₹{(item.price * item.qty).toFixed(2)}</Text>
-                </View>
-              ))}
-              
-              <View style={styles.billBreakdown}>
-                <View style={styles.billRow}><Text style={styles.billRowLabel}>Subtotal</Text><Text style={styles.billRowVal}>₹{subtotal.toFixed(2)}</Text></View>
-                <View style={styles.billRow}><Text style={styles.billRowLabel}>Delivery Charge</Text><Text style={styles.billRowVal}>₹{deliveryFee.toFixed(2)}</Text></View>
-                <View style={styles.billRow}><Text style={styles.billRowLabel}>Service Fee</Text><Text style={styles.billRowVal}>₹{serviceFee.toFixed(2)}</Text></View>
-              </View>
-
-              <View style={styles.billFooterRow}>
-                <Text style={styles.billFooterMethod}>Paid Via {order.paymentMethod || 'Online'}</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Text style={styles.billFooterTotalLabel}>Bill Total</Text>
-                  <Text style={styles.billFooterTotalVal}>₹{grandTotal.toFixed(2)}</Text>
-                </View>
-              </View>
-            </View>
-          </View>
-        ) : (
-          /* ================= ACTIVE ORDER UI (Live Tracking View) ================= */
-          <View style={[styles.mainCard, { marginHorizontal: 16, marginTop: 16 }]}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.orderIdText}>Order #{shortOrderId}</Text>
-              <View style={styles.statusBadgeLive}>
-                <Text style={styles.statusBadgeTextLive}>{orderStatus}</Text>
-              </View>
-            </View>
-
-            <TouchableOpacity style={styles.mapWrapper} activeOpacity={0.8} onPress={() => setIsMapExpanded(true)}>
-              {customerLocation ? (
-                <>
-                  <MapView
-                    style={styles.miniMap}
-                    initialRegion={{
-                      latitude: (customerLocation.latitude + (pharmacyCoords?.latitude || customerLocation.latitude)) / 2,
-                      longitude: (customerLocation.longitude + (pharmacyCoords?.longitude || customerLocation.longitude)) / 2,
-                      latitudeDelta: 0.05,
-                      longitudeDelta: 0.05,
-                    }}
-                    scrollEnabled={false} zoomEnabled={false} pitchEnabled={false} rotateEnabled={false}
-                  >
-                    <Marker coordinate={customerLocation} title="Your Home" pinColor="#10B981" />
-                    {pharmacyCoords && <Marker coordinate={pharmacyCoords} title="Pharmacy" pinColor="#3B82F6" />}
-                    
-                    {pharmacyCoords && customerLocation && GOOGLE_MAPS_APIKEY && (
-                      <MapViewDirections 
-                        origin={pharmacyCoords} 
-                        destination={customerLocation} 
-                        apikey={GOOGLE_MAPS_APIKEY} 
-                        strokeWidth={3} 
-                        strokeColor="#9CA3AF"
-                        lineDashPattern={[5, 5]} 
-                      />
-                    )}
-                    
-                    {order.riderLocation && GOOGLE_MAPS_APIKEY && (
-                      <MapViewDirections 
-                        origin={order.riderLocation} 
-                        destination={['Picked Up', 'Out for Delivery'].includes(orderStatus) ? customerLocation : pharmacyCoords} 
-                        apikey={GOOGLE_MAPS_APIKEY} 
-                        strokeWidth={4} 
-                        strokeColor="#3B82F6" 
-                        onReady={(result) => setEta(Math.ceil(result.duration))}
-                      />
-                    )}
-                    {!order.riderLocation && pharmacyCoords && customerLocation && GOOGLE_MAPS_APIKEY && (
-                      <MapViewDirections origin={pharmacyCoords} destination={customerLocation} apikey={GOOGLE_MAPS_APIKEY} strokeWidth={4} strokeColor="#3B82F6" onReady={(result) => setEta(Math.ceil(result.duration))} />
-                    )}
-
-                    {order.riderLocation && (
-                      <Marker 
-                        coordinate={order.riderLocation} 
-                        title="Delivery Agent" 
-                        flat={true} 
-                        rotation={order.riderLocation.heading || 0}
-                        anchor={{x: 0.5, y: 0.5}}
-                        zIndex={999}
-                      >
-                        <View style={{ backgroundColor: '#fff', borderRadius: 20, padding: 4, elevation: 4, shadowColor: '#000', shadowOpacity: 0.2, shadowOffset: {width: 0, height: 2}, shadowRadius: 4 }}>
-                          <View style={{ backgroundColor: '#10B981', width: 24, height: 24, borderRadius: 12, justifyContent: 'center', alignItems: 'center', transform: [{rotate: '45deg'}] }}>
-                              <Navigation color="#fff" size={14} fill="#fff" />
-                          </View>
-                        </View>
-                      </Marker>
-                    )}
-                  </MapView>
-                  <View style={styles.expandMapIconContainer}><Maximize2 color="#111827" size={16} /></View>
-                </>
-              ) : (
-                <View style={styles.mapPlaceholder}><MapIcon color="#9CA3AF" size={32} /><Text style={styles.mapPlaceholderText}>Live map coming soon</Text></View>
-              )}
+            <TouchableOpacity style={styles.helpBtn} onPress={() => navigation.navigate('HelpSupport')}>
+              <Text style={styles.helpBtnText}>HELP</Text>
             </TouchableOpacity>
+          </View>
 
-            <View style={styles.etaBanner}>
-              <Clock color="#059669" size={18} />
-              <Text style={styles.etaText}>Arriving in ~{order.etaMins || eta} minutes</Text>
-            </View>
-
-            {pharmacyDetails && (
-              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3F4F6', marginHorizontal: 16, marginTop: 16, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB' }}>
-                <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#E0F2FE', justifyContent: 'center', alignItems: 'center', marginRight: 12 }}>
-                  <Text style={{ fontSize: 20 }}>🏥</Text>
+          <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 100 }}>
+            <View style={styles.historicalWrapper}>
+              <View style={styles.histTimeline}>
+                <View style={styles.histRow}>
+                  <MapPin color="#EA580C" size={20} />
+                  <View style={styles.histTextContainer}>
+                    <Text style={styles.histTitle}>{pharmacyDetails?.name || order.pharmacyName || 'Pharmacy Partner'}</Text>
+                    <Text style={styles.histSub}>{pharmacyDetails?.address || order.pharmacyAddress || 'Local Address'}</Text>
+                  </View>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 12, color: '#6B7280', fontWeight: 'bold', textTransform: 'uppercase' }}>Preparing Your Order At</Text>
-                  <Text style={{ fontSize: 15, fontWeight: 'bold', color: '#111827', marginTop: 2 }}>{pharmacyDetails.name}</Text>
-                  <Text style={{ fontSize: 12, color: '#6B7280', marginTop: 1 }} numberOfLines={1}>{pharmacyDetails.address}</Text>
+                <View style={styles.histDottedLine} />
+                <View style={styles.histRow}>
+                  <Home color="#4B5563" size={20} />
+                  <View style={styles.histTextContainer}>
+                    <Text style={styles.histTitle}>Home</Text>
+                    <Text style={styles.histSub}>{order.deliveryAddress || order.customerAddress || order.address || 'Your Address'}</Text>
+                  </View>
+                </View>
+                <View style={styles.histSolidLine} />
+                <View style={styles.histRow}>
+                  <CheckCircle2 color="#10B981" size={20} />
+                  <View style={[styles.histTextContainer, { flex: 1 }]}>
+                    <Text style={styles.histSub}>Order delivered on {fullDateStr} by {order.driverName || 'Partner'}</Text>
+                  </View>
+                  <View style={styles.onTimeBadge}><Text style={styles.onTimeText}>ON TIME</Text></View>
                 </View>
               </View>
+
+              <View style={styles.histDivider} />
+
+              <View style={styles.billDetailsContainer}>
+                <Text style={styles.billDetailsHeader}>BILL DETAILS</Text>
+
+                {order.items && order.items.map((item, index) => (
+                  <View key={index} style={styles.billItemRow}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <Text style={styles.billItemName}>{item.name} x {item.qty}</Text>
+                    </View>
+                    <Text style={styles.billItemPrice}>₹{(item.price * item.qty).toFixed(2)}</Text>
+                  </View>
+                ))}
+
+                <View style={styles.billBreakdown}>
+                  <View style={styles.billRow}><Text style={styles.billRowLabel}>Subtotal</Text><Text style={styles.billRowVal}>₹{subtotal.toFixed(2)}</Text></View>
+                  <View style={styles.billRow}><Text style={styles.billRowLabel}>Delivery Charge</Text><Text style={styles.billRowVal}>₹{deliveryFee.toFixed(2)}</Text></View>
+                  <View style={styles.billRow}><Text style={styles.billRowLabel}>Service Fee</Text><Text style={styles.billRowVal}>₹{serviceFee.toFixed(2)}</Text></View>
+                </View>
+
+                <View style={styles.billFooterRow}>
+                  <Text style={styles.billFooterMethod}>Paid Via {order.paymentMethod || 'Online'}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={styles.billFooterTotalLabel}>Bill Total</Text>
+                    <Text style={styles.billFooterTotalVal}>₹{grandTotal.toFixed(2)}</Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+          </ScrollView>
+        </SafeAreaView>
+      ) : (
+        <View style={styles.mainContainer}>
+          <MapView
+            style={{ width: '100%', height: '100%' }}
+            provider={PROVIDER_GOOGLE}
+            initialRegion={{
+              latitude: customerLocation ? (customerLocation.latitude + (pharmacyCoords?.latitude || customerLocation.latitude)) / 2 : 28.5450,
+              longitude: customerLocation ? (customerLocation.longitude + (pharmacyCoords?.longitude || customerLocation.longitude)) / 2 : 77.3960,
+              latitudeDelta: 0.05,
+              longitudeDelta: 0.05,
+            }}
+          >
+            <Marker coordinate={customerLocation || { latitude: 28.5450, longitude: 77.3960 }} title="Dropoff: Customer" pinColor="#F59E0B" zIndex={1} />
+
+            {pharmacyCoords && (
+              <Marker coordinate={pharmacyCoords} title="Pharmacy" pinColor="#3B82F6" zIndex={1} />
             )}
 
-            {orderStatus !== 'Placed' && (
-              <View style={styles.driverBox}>
-                {order.driverName ? (
-                  <>
-                    <View style={styles.driverAvatar}>
-                      <Text style={{ fontSize: 20, color: '#fff' }}>{order.driverName.charAt(0).toUpperCase()}</Text>
+            {!['Picked Up', 'Out for Delivery', 'Delivered'].includes(orderStatus) && pharmacyCoords && GOOGLE_MAPS_APIKEY && (
+              <MapViewDirections
+                origin={pharmacyCoords}
+                destination={customerLocation || { latitude: 28.5450, longitude: 77.3960 }}
+                apikey={GOOGLE_MAPS_APIKEY}
+                strokeWidth={3}
+                strokeColor="#9CA3AF"
+                lineDashPattern={[5, 5]}
+              />
+            )}
+
+            {order.riderLocation && GOOGLE_MAPS_APIKEY && (
+              <MapViewDirections
+                origin={order.riderLocation}
+                destination={['Picked Up', 'Out for Delivery'].includes(orderStatus) ? (customerLocation || { latitude: 28.5450, longitude: 77.3960 }) : (pharmacyCoords || { latitude: 28.5355, longitude: 77.3910 })}
+                apikey={GOOGLE_MAPS_APIKEY}
+                strokeWidth={4}
+                strokeColor="#3B82F6"
+                onReady={(result) => setEta(Math.ceil(result.duration))}
+              />
+            )}
+
+            {order.riderLocation && (
+              <>
+                <Marker
+                  coordinate={order.riderLocation}
+                  flat={true}
+                  anchor={{ x: 0.5, y: 0.5 }}
+                  zIndex={999}
+                >
+                  <View style={{
+                    backgroundColor: '#fff',
+                    padding: 6,
+                    borderRadius: 24,
+                    borderWidth: 2,
+                    borderColor: '#3B82F6',
+                    elevation: 5,
+                    transform: [{ rotate: `${(order.riderLocation.heading || 0) - 45}deg` }]
+                  }}>
+                    <Navigation color="#3B82F6" size={24} fill="#3B82F6" />
+                  </View>
+                </Marker>
+
+                {eta !== null && (
+                  <Marker
+                    coordinate={order.riderLocation}
+                    zIndex={1000}
+                    anchor={{ x: 0.5, y: 1.5 }}
+                  >
+                    <View style={styles.etaBubble}>
+                      <Text style={styles.etaBubbleText}>ETA : {eta} MINS</Text>
+                      <View style={styles.etaBubbleTriangle} />
                     </View>
-                    <View style={styles.driverInfo}>
-                      <Text style={styles.driverName} numberOfLines={1} adjustsFontSizeToFit>{order.driverName}</Text>
-                      <Text style={styles.driverRole}>{order.driverRating || '4.9'} • Delivery partner</Text>
-                    </View>
-                    <View style={styles.driverActions}>
-                      <TouchableOpacity 
-                        style={styles.actionBtnSecondary}
-                        onPress={() => {
-                          if(order.driverPhone) Linking.openURL(`sms:${order.driverPhone}`);
-                        }}
-                      >
-                        <MessageSquare color="#4B5563" size={18} />
-                      </TouchableOpacity>
-                      <TouchableOpacity 
-                        style={styles.actionBtnPrimary}
-                        onPress={() => {
-                          if(order.driverPhone) Linking.openURL(`tel:${order.driverPhone}`);
-                        }}
-                      >
-                        <Phone color="#FFFFFF" size={18} />
-                      </TouchableOpacity>
-                    </View>
-                  </>
-                ) : (
-                  <>
-                    <View style={[styles.driverAvatar, { backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB' }]}>
-                      <ActivityIndicator size="small" color="#9CA3AF" />
-                    </View>
-                    <View style={styles.driverInfo}>
-                      <Text style={styles.driverName}>Assigning partner...</Text>
-                      <Text style={styles.driverRole}>Looking for nearby riders</Text>
-                    </View>
-                  </>
+                  </Marker>
+                )}
+              </>
+            )}
+          </MapView>
+
+          <SafeAreaView style={styles.floatingTopHeader} pointerEvents="box-none">
+            <View style={styles.floatingTopRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <TouchableOpacity style={styles.floatingBackBtn} onPress={() => navigation.goBack()}>
+                  <ArrowLeft color="#111827" size={24} />
+                </TouchableOpacity>
+                <View style={styles.floatingOrderInfo}>
+                  <Text style={styles.floatingOrderId}>ORDER #{shortOrderId}</Text>
+                  <Text style={styles.floatingOrderSub}>{timeString} | {numItems} items, ₹{grandTotal}</Text>
+                </View>
+              </View>
+              <TouchableOpacity style={styles.floatingHelpBtn} onPress={() => navigation.navigate('HelpSupport')}>
+                <Text style={styles.floatingHelpText}>HELP</Text>
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
+
+          <View style={styles.swiggyBottomCard}>
+            <View style={styles.dragHandle} />
+
+            <View style={styles.swiggyCardHeader}>
+              <View style={styles.swiggyStatusIcon}>
+                <Image source={{ uri: 'https://cdn-icons-png.flaticon.com/512/1008/1008010.png' }} style={{ width: 24, height: 24, tintColor: '#4B5563' }} />
+                <View style={styles.swiggyStatusBadge}><Text style={styles.swiggyStatusBadgeText}>NOW</Text></View>
+              </View>
+
+              <View style={styles.swiggyStatusTextContainer}>
+                <Text style={styles.swiggyStatusTitle}>{orderStatus}</Text>
+                <Text style={styles.swiggyStatusSub}>
+                  {order.driverName ? `${order.driverName} has picked up your order. Your items are en route!` : 'Preparing your order. Partner will be assigned soon.'}
+                </Text>
+                {order.driverPhone && (
+                  <Text style={{ fontSize: 13, color: '#6B7280', marginTop: 4 }}>
+                    Phone: {order.driverPhone}
+                  </Text>
                 )}
               </View>
-            )}
+
+              {order.driverName && (
+                <View style={styles.driverAvatarContainer}>
+                  {order.driverPhoto ? (
+                    <Image source={{ uri: order.driverPhoto }} style={styles.swiggyDriverAvatar} />
+                  ) : (
+                    <View style={[styles.swiggyDriverAvatar, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#3B82F6' }]}>
+                      <Text style={{ color: '#FFF', fontSize: 24, fontWeight: 'bold' }}>
+                        {order.driverName.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                  <TouchableOpacity style={styles.swiggyCallBtn} onPress={() => Linking.openURL(`tel:${order.driverPhone}`)}>
+                    <Phone color="#FFF" size={14} fill="#FFF" />
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F3F4F6', justifyContent: 'space-around' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <MapPin color="#3B82F6" size={16} fill="#3B82F6" />
+                <Text style={{ fontSize: 13, color: '#6B7280', marginLeft: 6, fontWeight: '500' }}>Pharmacy</Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <MapPin color="#F59E0B" size={16} fill="#F59E0B" />
+                <Text style={{ fontSize: 13, color: '#6B7280', marginLeft: 6, fontWeight: '500' }}>Drop-off</Text>
+              </View>
+            </View>
 
             {['Driver Assigned', 'Picked Up', 'Out for Delivery'].includes(orderStatus) && (
-              <View style={{ backgroundColor: '#F0FDF4', padding: 16, borderRadius: 16, marginBottom: 24, borderWidth: 1, borderColor: '#A7F3D0', alignItems: 'center' }}>
-                <Text style={{ fontSize: 13, color: '#047857', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 0.5 }}>Provide PIN to Delivery Agent</Text>
-                <Text style={{ fontSize: 32, fontWeight: '900', color: '#065F46', letterSpacing: 8, marginTop: 4 }}>
-                  {order.dropoffOtp || order.numericId || order.id.slice(-6).toUpperCase()}
-                </Text>
+              <View style={styles.swiggyOtpContainer}>
+                <Text style={styles.swiggyOtpLabel}>Provide PIN to Delivery Agent</Text>
+                <Text style={styles.swiggyOtpText}>{order.dropoffOtp || order.numericId || order.id.slice(-6).toUpperCase()}</Text>
               </View>
             )}
-
-            <View style={styles.timelineSection}>
-              <View style={styles.timelineRow}><View style={styles.timelineIconContainer}><CheckCircle2 color="#00C853" size={20} /><View style={[styles.timelineLine, currentStep >= 2 && styles.timelineLineActive]} /></View><View style={styles.timelineContent}><Text style={styles.timelineTitleActive}>Order placed</Text><Text style={styles.timelineTime}>{timeString}</Text></View></View>
-              <View style={styles.timelineRow}><View style={styles.timelineIconContainer}>{currentStep >= 2 ? <CheckCircle2 color="#00C853" size={20} /> : <Circle color="#D1D5DB" size={20} />}<View style={[styles.timelineLine, currentStep >= 3 && styles.timelineLineActive]} /></View><View style={styles.timelineContent}><Text style={currentStep >= 2 ? styles.timelineTitleActive : styles.timelineTitleInactive}>Confirmed and preparing</Text><Text style={styles.timelineTime}>{currentStep >= 2 ? timeString : 'Pending'}</Text></View></View>
-              <View style={styles.timelineRow}><View style={styles.timelineIconContainer}>{currentStep >= 3 ? <CheckCircle2 color="#00C853" size={20} /> : <Circle color="#D1D5DB" size={20} />}<View style={[styles.timelineLine, currentStep >= 4 && styles.timelineLineActive]} /></View><View style={styles.timelineContent}><Text style={currentStep >= 3 ? styles.timelineTitleActive : styles.timelineTitleInactive}>Ready for pickup</Text><Text style={styles.timelineTime}>{currentStep >= 3 ? 'Awaiting driver' : 'Pending'}</Text></View></View>
-              <View style={styles.timelineRow}><View style={styles.timelineIconContainer}>{currentStep >= 4 ? <CheckCircle2 color="#00C853" size={20} /> : <Circle color="#D1D5DB" size={20} />}<View style={[styles.timelineLine, currentStep >= 5 && styles.timelineLineActive]} /></View><View style={styles.timelineContent}><Text style={currentStep >= 4 ? styles.timelineTitleActive : styles.timelineTitleInactive}>Driver reached shop</Text><Text style={styles.timelineTime}>{currentStep >= 4 ? 'Package picked up' : 'Pending'}</Text></View></View>
-              <View style={styles.timelineRow}><View style={styles.timelineIconContainer}>{currentStep >= 5 ? <CheckCircle2 color="#00C853" size={20} /> : <Circle color="#D1D5DB" size={20} />}<View style={[styles.timelineLine, currentStep >= 6 && styles.timelineLineActive]} /></View><View style={styles.timelineContent}><Text style={currentStep >= 5 ? styles.timelineTitleActive : styles.timelineTitleInactive}>Coming towards home</Text><Text style={styles.timelineTime}>{currentStep >= 5 ? 'On the way' : 'Pending'}</Text></View></View>
-              <View style={[styles.timelineRow, { marginBottom: 0 }]}><View style={styles.timelineIconContainer}>{currentStep >= 6 ? <CheckCircle2 color="#00C853" size={20} /> : <Circle color="#D1D5DB" size={20} />}</View><View style={styles.timelineContent}><Text style={currentStep >= 6 ? styles.timelineTitleActive : styles.timelineTitleInactive}>Delivered</Text><Text style={styles.timelineTime}>{currentStep >= 6 ? 'Completed' : 'Pending'}</Text></View></View>
-            </View>
-
-            <View style={styles.orderDetailsSection}>
-              <View style={styles.receiptHeader}>
-                 <Text style={styles.orderDetailsTitle}>Order Details</Text>
-                 <Text style={styles.receiptOrderId}>{shortOrderId}</Text>
-              </View>
-              <View style={styles.receiptDividerDashed} />
-              
-              {order.items && order.items.map((item, index) => (
-                <View key={index} style={styles.orderItemRow}>
-                  <View style={styles.orderItemLeft}>
-                     <Text style={styles.orderItemText}>{item.qty}x {item.name || 'Prescription Medicines'}</Text>
-                  </View>
-                  <Text style={styles.orderItemPrice}>₹{(item.price * item.qty).toFixed(2)}</Text>
-                </View>
-              ))}
-              
-              <View style={styles.receiptDividerDashed} />
-              
-              <View style={styles.orderItemRow}><Text style={styles.orderTotalValue}>Subtotal</Text><Text style={styles.orderTotalValue}>₹{subtotal.toFixed(2)}</Text></View>
-              <View style={styles.orderItemRow}><Text style={styles.orderTotalValue}>Delivery Charge</Text><Text style={styles.orderTotalValue}>₹{deliveryFee.toFixed(2)}</Text></View>
-              <View style={styles.orderItemRow}><Text style={styles.orderTotalValue}>Service Fee</Text><Text style={styles.orderTotalValue}>₹{serviceFee.toFixed(2)}</Text></View>
-              
-              <View style={styles.receiptDividerSolid} />
-              
-              <View style={styles.orderItemRow}><Text style={styles.receiptTotalText}>Total</Text><Text style={styles.receiptTotalPrice}>₹{grandTotal.toFixed(2)}</Text></View>
-              
-              <View style={styles.receiptFooter}>
-                <Text style={styles.receiptFooterText}>Paid via {order.paymentMethod === 'online' ? 'Online' : 'Cash on Delivery'}</Text>
-              </View>
-            </View>
           </View>
-        )}
-      </ScrollView>
+        </View>
+      )}
 
       {/* Floating Reorder & Rate Buttons for Delivered Orders */}
       {isDelivered && (
         <View style={styles.floatingFooter}>
           {!hasRated && (
-            <TouchableOpacity 
-              style={[styles.reorderLargeBtn, { backgroundColor: '#F59E0B', marginBottom: 12 }]} 
+            <TouchableOpacity
+              style={[styles.reorderLargeBtn, { backgroundColor: '#F59E0B', marginBottom: 12 }]}
               onPress={() => setShowRatingModal(true)}
             >
               <Text style={styles.reorderLargeText}>RATE ORDER</Text>
@@ -521,55 +509,18 @@ export default function LiveTrackingScreen({ navigation, route }) {
       )}
 
       {order && (
-        <RatingModal 
+        <RatingModal
           visible={showRatingModal}
           onClose={() => setShowRatingModal(false)}
           onSubmit={handleRatingSubmit}
-          pharmacyName={order.pharmacyName}
+          pharmacyName={pharmacyDetails?.name || 'Pharmacy'}
           driverName={order.driverName}
           orderItems={order.items || []}
+          initialPharmacyRating={order.serviceRating}
+          initialDriverRating={order.deliveryRating}
         />
       )}
-
-      {/* Full-Screen Map Modal */}
-      {!isDelivered && (
-        <Modal visible={isMapExpanded} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setIsMapExpanded(false)}>
-          <View style={styles.fullScreenMapContainer}>
-            <TouchableOpacity style={styles.closeMapBtn} onPress={() => setIsMapExpanded(false)}><X color="#111827" size={24} /></TouchableOpacity>
-            {customerLocation && (
-              <MapView style={styles.fullScreenMap} initialRegion={{ latitude: (customerLocation.latitude + (pharmacyCoords?.latitude || customerLocation.latitude)) / 2, longitude: (customerLocation.longitude + (pharmacyCoords?.longitude || customerLocation.longitude)) / 2, latitudeDelta: 0.08, longitudeDelta: 0.08 }}>
-                <Marker coordinate={customerLocation} title="Your Location" pinColor="#10B981" />
-                {pharmacyCoords && <Marker coordinate={pharmacyCoords} title="Pharmacy" pinColor="#3B82F6" />}
-                
-                {pharmacyCoords && customerLocation && GOOGLE_MAPS_APIKEY && <MapViewDirections origin={pharmacyCoords} destination={customerLocation} apikey={GOOGLE_MAPS_APIKEY} strokeWidth={3} strokeColor="#9CA3AF" lineDashPattern={[5, 5]} />}
-                
-                {order.riderLocation && GOOGLE_MAPS_APIKEY && (
-                  <MapViewDirections 
-                    origin={order.riderLocation} 
-                    destination={['Picked Up', 'Out for Delivery'].includes(orderStatus) ? customerLocation : pharmacyCoords} 
-                    apikey={GOOGLE_MAPS_APIKEY} strokeWidth={4} strokeColor="#3B82F6" 
-                  />
-                )}
-                {!order.riderLocation && pharmacyCoords && customerLocation && GOOGLE_MAPS_APIKEY && (
-                  <MapViewDirections origin={pharmacyCoords} destination={customerLocation} apikey={GOOGLE_MAPS_APIKEY} strokeWidth={4} strokeColor="#3B82F6" />
-                )}
-
-                {order.riderLocation && (
-                  <Marker coordinate={order.riderLocation} title="Delivery Agent" flat={true} rotation={order.riderLocation.heading || 0} anchor={{x: 0.5, y: 0.5}} zIndex={999}>
-                    <View style={{ backgroundColor: '#fff', borderRadius: 24, padding: 4, elevation: 5, shadowColor: '#000', shadowOpacity: 0.3, shadowOffset: {width: 0, height: 3}, shadowRadius: 5 }}>
-                      <View style={{ backgroundColor: '#10B981', width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center', transform: [{rotate: '45deg'}] }}>
-                          <Navigation color="#fff" size={16} fill="#fff" />
-                      </View>
-                    </View>
-                  </Marker>
-                )}
-              </MapView>
-            )}
-          </View>
-        </Modal>
-      )}
-
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -580,9 +531,9 @@ const styles = StyleSheet.create({
   headerSubtitle: { fontSize: 13, color: '#6B7280', marginTop: 2 },
   helpBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 },
   helpBtnText: { color: '#EA580C', fontWeight: 'bold', fontSize: 13, letterSpacing: 0.5 },
-  
+
   container: { flex: 1, backgroundColor: '#F9FAFB' },
-  
+
   // Historical UI Styles (Delivered)
   historicalWrapper: { backgroundColor: '#FFFFFF' },
   histTimeline: { padding: 20 },
@@ -594,9 +545,9 @@ const styles = StyleSheet.create({
   histSolidLine: { width: 2, height: 40, backgroundColor: '#E5E7EB', marginLeft: 9, marginVertical: 4 },
   onTimeBadge: { backgroundColor: '#8B5CF6', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, marginLeft: 8, alignSelf: 'center' },
   onTimeText: { color: '#FFFFFF', fontSize: 10, fontWeight: 'bold' },
-  
+
   histDivider: { height: 8, backgroundColor: '#F3F4F6' },
-  
+
   billDetailsContainer: { padding: 20, backgroundColor: '#FFFFFF' },
   billDetailsHeader: { fontSize: 14, fontWeight: '800', color: '#6B7280', letterSpacing: 1, marginBottom: 16 },
   billItemRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
@@ -604,73 +555,250 @@ const styles = StyleSheet.create({
   vegDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#059669' },
   billItemName: { fontSize: 15, color: '#374151' },
   billItemPrice: { fontSize: 15, color: '#374151', fontWeight: '500' },
-  
+
   billBreakdown: { borderTopWidth: 1, borderTopColor: '#F3F4F6', paddingTop: 16 },
   billRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
   billRowLabel: { fontSize: 14, color: '#6B7280' },
   billRowVal: { fontSize: 14, color: '#4B5563' },
-  
+
   billFooterRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
   billFooterMethod: { fontSize: 14, color: '#6B7280' },
   billFooterTotalLabel: { fontSize: 14, fontWeight: 'bold', color: '#111827', marginRight: 12 },
   billFooterTotalVal: { fontSize: 16, fontWeight: 'bold', color: '#111827' },
-  
+
   floatingFooter: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#FFFFFF', padding: 16, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
   reorderLargeBtn: { backgroundColor: '#EA580C', paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
   reorderLargeText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold', letterSpacing: 1 },
 
-  // Live Tracking UI Styles
-  mainCard: { backgroundColor: '#FFFFFF', borderRadius: 24, padding: 20, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, elevation: 3, borderWidth: 1, borderColor: '#F3F4F6' },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  orderIdText: { fontSize: 20, fontWeight: 'bold', color: '#111827' },
-  statusBadgeLive: { backgroundColor: '#DBEAFE', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
-  statusBadgeTextLive: { color: '#1E3A8A', fontWeight: 'bold', fontSize: 12 },
-
-  mapWrapper: { height: 160, borderRadius: 16, overflow: 'hidden', marginBottom: 16, backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB' },
-  miniMap: { flex: 1 },
-  expandMapIconContainer: { position: 'absolute', bottom: 12, right: 12, backgroundColor: '#FFFFFF', padding: 8, borderRadius: 8, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 },
+  mainContainer: { flex: 1, backgroundColor: '#F9FAFB' },
   mapPlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  mapPlaceholderText: { color: '#6B7280', marginTop: 8, fontSize: 14 },
-  
-  fullScreenMapContainer: { flex: 1, backgroundColor: '#fff' },
-  fullScreenMap: { width: '100%', height: '100%' },
-  closeMapBtn: { position: 'absolute', top: 16, right: 16, zIndex: 10, backgroundColor: '#FFFFFF', padding: 12, borderRadius: 24, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, elevation: 5 },
 
-  etaBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#ECFDF5', padding: 12, borderRadius: 12, marginBottom: 20, borderWidth: 1, borderColor: '#D1FAE5' },
-  etaText: { color: '#065F46', fontWeight: 'bold', fontSize: 14, marginLeft: 8 },
+  floatingTopHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+  },
+  floatingTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'android' ? 24 : 12,
+  },
+  floatingBackBtn: {
+    backgroundColor: '#FFFFFF',
+    padding: 8,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  floatingOrderInfo: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 24,
+    marginLeft: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  floatingOrderId: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#111827',
+  },
+  floatingOrderSub: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  floatingHelpBtn: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  floatingHelpText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#EA580C',
+  },
 
-  driverBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 16, padding: 16, marginBottom: 24 },
-  driverAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#1E3A8A', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-  driverInfo: { flex: 1 },
-  driverName: { fontSize: 16, fontWeight: 'bold', color: '#111827' },
-  driverRole: { fontSize: 13, color: '#6B7280', marginTop: 2 },
-  driverActions: { flexDirection: 'row', gap: 8 },
-  actionBtnSecondary: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#F3F4F6', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E5E7EB' },
-  actionBtnPrimary: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#00C853', justifyContent: 'center', alignItems: 'center' },
+  customerMarker: {
+    backgroundColor: '#111827',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  scooterMarkerContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  etaBubble: {
+    backgroundColor: '#1F2937',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginBottom: 4,
+  },
+  etaBubbleText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  etaBubbleTriangle: {
+    width: 0,
+    height: 0,
+    backgroundColor: 'transparent',
+    borderStyle: 'solid',
+    borderLeftWidth: 6,
+    borderRightWidth: 6,
+    borderTopWidth: 6,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: '#1F2937',
+    alignSelf: 'center',
+  },
 
-  timelineSection: { marginVertical: 12 },
-  timelineRow: { flexDirection: 'row', marginBottom: 24 },
-  timelineIconContainer: { alignItems: 'center', width: 24, marginRight: 16 },
-  timelineLine: { width: 2, height: 30, backgroundColor: '#E5E7EB', marginTop: 4, position: 'absolute', top: 20 },
-  timelineLineActive: { backgroundColor: '#00C853' },
-  timelineContent: { flex: 1, paddingTop: 2 },
-  timelineTitleActive: { fontSize: 15, fontWeight: 'bold', color: '#111827' },
-  timelineTitleInactive: { fontSize: 15, fontWeight: '500', color: '#9CA3AF' },
-  timelineTime: { fontSize: 13, color: '#6B7280', marginTop: 2 },
-
-  orderDetailsSection: { marginTop: 24, backgroundColor: '#FFFFFF', padding: 20, borderRadius: 16, shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 8, elevation: 2, borderWidth: 1, borderColor: '#F3F4F6' },
-  receiptHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  orderDetailsTitle: { fontSize: 16, fontWeight: '800', color: '#111827', textTransform: 'uppercase', letterSpacing: 0.5 },
-  receiptOrderId: { fontSize: 13, color: '#6B7280', fontWeight: '600' },
-  receiptDividerDashed: { height: 1, borderWidth: 1, borderColor: '#E5E7EB', borderStyle: 'dashed', marginVertical: 16, borderRadius: 1 },
-  receiptDividerSolid: { height: 1, backgroundColor: '#E5E7EB', marginVertical: 16 },
-  orderItemRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12, alignItems: 'center' },
-  orderItemLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  orderItemText: { fontSize: 14, color: '#374151', fontWeight: '500' },
-  orderItemPrice: { fontSize: 14, fontWeight: '600', color: '#111827' },
-  orderTotalValue: { fontSize: 14, fontWeight: '500', color: '#6B7280' },
-  receiptTotalText: { fontSize: 16, fontWeight: '800', color: '#111827', textTransform: 'uppercase' },
-  receiptTotalPrice: { fontSize: 20, fontWeight: '900', color: '#00C853' },
-  receiptFooter: { marginTop: 12, alignItems: 'center', backgroundColor: '#F9FAFB', padding: 10, borderRadius: 8 },
-  receiptFooterText: { fontSize: 12, color: '#6B7280', fontWeight: '500' },
+  swiggyBottomCard: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingTop: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowOffset: { width: 0, height: -5 },
+    shadowRadius: 15,
+    elevation: 10,
+  },
+  dragHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 20,
+  },
+  swiggyCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  swiggyStatusIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+    position: 'relative',
+  },
+  swiggyStatusBadge: {
+    position: 'absolute',
+    bottom: -8,
+    backgroundColor: '#4F46E5',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  swiggyStatusBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: 'bold',
+  },
+  swiggyStatusTextContainer: {
+    flex: 1,
+  },
+  swiggyStatusTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  swiggyStatusSub: {
+    fontSize: 13,
+    color: '#6B7280',
+    lineHeight: 18,
+  },
+  swiggyDelayNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  redDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#EF4444',
+    marginRight: 6,
+  },
+  delayText: {
+    fontSize: 12,
+    color: '#4B5563',
+  },
+  driverAvatarContainer: {
+    position: 'relative',
+    marginLeft: 12,
+  },
+  swiggyDriverAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#F3F4F6',
+  },
+  swiggyCallBtn: {
+    position: 'absolute',
+    bottom: -4,
+    right: -4,
+    backgroundColor: '#EA580C',
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  swiggyOtpContainer: {
+    marginTop: 20,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  swiggyOtpLabel: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontWeight: '600',
+  },
+  swiggyOtpText: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#111827',
+    letterSpacing: 2,
+  }
 });

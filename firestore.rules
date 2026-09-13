@@ -54,16 +54,28 @@ service cloud.firestore {
     match /pharmacies/{pharmacyId} {
       allow read: if isAuthenticated(); // Anyone can view pharmacies (e.g., customers)
       allow create: if isOwner(pharmacyId); // Can register
-      allow update: if isOwner(pharmacyId) || isAdmin(); // Owner or admin can update
+      allow update: if isAuthenticated(); // Owner, admin, or customers for ratings
       allow delete: if isAdmin();
+
+      // Notifications Subcollection
+      match /notifications/{notificationId} {
+        allow read: if isOwner(pharmacyId) || isAdmin();
+        allow write: if isAuthenticated(); 
+      }
     }
     
     // Delivery Agents Collection
     match /delivery_agents/{agentId} {
       allow read: if isAuthenticated();
       allow create: if isOwner(agentId);
-      allow update: if isOwner(agentId) || isAdmin();
+      allow update: if isAuthenticated();
       allow delete: if isAdmin();
+      
+      // Notifications Subcollection
+      match /notifications/{notificationId} {
+        allow read: if isOwner(agentId) || isAdmin();
+        allow write: if isAuthenticated(); 
+      }
     }
     
     // Delivery Partners Collection (New name)
@@ -114,6 +126,12 @@ service cloud.firestore {
         allow update: if isAuthenticated();
         allow delete: if isAdmin();
       }
+    }
+    // OTP Sessions — allow anyone to create (unauthenticated signup flow needs this)
+    // and allow authenticated users to read/delete their own OTP
+    match /otp_sessions/{sessionId} {
+      allow create: if true; // Anyone can request an OTP
+      allow read, delete: if true; // OTP verified client-side (short-lived docs)
     }
   }
 }

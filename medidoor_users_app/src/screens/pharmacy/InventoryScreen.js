@@ -63,7 +63,7 @@ export default function InventoryScreen() {
   const getStatusColor = (stock) => {
     if (stock <= 0) return '#EF4444';
     if (stock <= 20) return '#F59E0B';
-    return '#00C853';
+    return '#0D9494';
   };
 
   const lowStockItems = inventory.filter(item => item.stock <= 20);
@@ -274,7 +274,7 @@ export default function InventoryScreen() {
 
       {/* List */}
       {loading ? (
-        <ActivityIndicator size="large" color="#00C853" style={{ marginTop: 40 }} />
+        <ActivityIndicator size="large" color="#0D9494" style={{ marginTop: 40 }} />
       ) : (
         <ScrollView contentContainerStyle={styles.content}>
           {filteredInventory.length === 0 ? (
@@ -394,7 +394,7 @@ export default function InventoryScreen() {
               <Text style={styles.fieldLabel}>Medicine Image</Text>
               <TouchableOpacity style={styles.imagePicker} onPress={pickImage} disabled={uploadingImg}>
                 {uploadingImg ? (
-                  <ActivityIndicator color="#00C853" />
+                  <ActivityIndicator color="#0D9494" />
                 ) : form.imgUri ? (
                   <Image source={{ uri: form.imgUri }} style={styles.imagePreview} />
                 ) : (
@@ -509,9 +509,9 @@ const styles = StyleSheet.create({
   },
   bulkBtnText: { color: '#374151', fontWeight: 'bold', fontSize: 13 },
   addButton: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: '#00C853',
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#0D9494',
     paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10,
-    shadowColor: '#00C853', shadowOffset: { width: 0, height: 4 },
+    shadowColor: '#0D9494', shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3, shadowRadius: 6, elevation: 4
   },
   addButtonText: { color: '#fff', fontWeight: 'bold', marginLeft: 6, fontSize: 14 },
@@ -584,7 +584,7 @@ const styles = StyleSheet.create({
     marginBottom: 24, marginTop: 4,
   },
   toggleBtn: { width: 50, height: 28, borderRadius: 14, backgroundColor: '#E5E7EB', padding: 2 },
-  toggleBtnActive: { backgroundColor: '#00C853' },
+  toggleBtnActive: { backgroundColor: '#0D9494' },
   toggleKnob: {
     width: 24, height: 24, borderRadius: 12, backgroundColor: '#FFF',
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
@@ -592,7 +592,7 @@ const styles = StyleSheet.create({
   },
   toggleKnobActive: { transform: [{ translateX: 22 }] },
   saveBtn: {
-    flexDirection: 'row', backgroundColor: '#00C853', padding: 16,
+    flexDirection: 'row', backgroundColor: '#0D9494', padding: 16,
     borderRadius: 12, justifyContent: 'center', alignItems: 'center',
   },
   saveBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold', marginLeft: 8 },

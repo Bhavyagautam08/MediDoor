@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Platform, ActivityIndicator, Image, Alert
+  Platform, ActivityIndicator, Image, Alert, Modal, TextInput
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Bell, TrendingUp, Clock, CheckCircle2, XCircle, Package, ChevronRight } from 'lucide-react-native';
-import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
+import { Bell, TrendingUp, Clock, CheckCircle2, XCircle, Package, ChevronRight, ClipboardList, Search } from 'lucide-react-native';
+import { collection, query, onSnapshot, orderBy, where } from 'firebase/firestore';
 import { auth, db } from '../../firebaseConfig';
 import { doc, getDoc } from 'firebase/firestore';
 
@@ -14,6 +14,10 @@ export default function DashboardScreen({ navigation }) {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [pharmacyName, setPharmacyName] = useState('Partner');
+  const [pharmacyRating, setPharmacyRating] = useState('New');
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedOrderDetails, setSelectedOrderDetails] = useState(null);
 
   useEffect(() => {
     const u = auth.currentUser;
@@ -22,9 +26,22 @@ export default function DashboardScreen({ navigation }) {
     // Fetch pharmacy name
     const fetchName = async () => {
       const snap = await getDoc(doc(db, 'pharmacies', u.uid));
-      if (snap.exists()) setPharmacyName(snap.data().name || 'Partner');
+      if (snap.exists()) {
+        const data = snap.data();
+        setPharmacyName(data.name || 'Partner');
+        setPharmacyRating(data.rating ? parseFloat(data.rating).toFixed(1) : 'New');
+      }
     };
     fetchName();
+
+    // Listen for unread notifications
+    const notifQ = query(
+      collection(db, 'pharmacies', u.uid, 'notifications'),
+      where('read', '==', false)
+    );
+    const notifUnsubscribe = onSnapshot(notifQ, (snapshot) => {
+      setUnreadCount(snapshot.docs.length);
+    });
 
     // Live listener for all orders
     const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
@@ -40,7 +57,10 @@ export default function DashboardScreen({ navigation }) {
       setOrders(fetched);
       setLoading(false);
     });
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      notifUnsubscribe();
+    };
   }, []);
 
   // Stats
@@ -56,14 +76,17 @@ export default function DashboardScreen({ navigation }) {
   const platformFee = gross * 0.03;
   const net = gross - platformFee;
 
-  // Average Rating
-  const ratedOrders = orders.filter(o => typeof o.serviceRating === 'number');
-  const avgRating = ratedOrders.length > 0 
-    ? (ratedOrders.reduce((sum, o) => sum + o.serviceRating, 0) / ratedOrders.length).toFixed(1)
-    : 'New';
-
   // Recent orders (last 5)
-  const recentOrders = orders.slice(0, 5);
+  const recentOrders = orders
+    .slice(0, 10)
+    .filter(o => {
+      if (!searchQuery) return true;
+      const lowerQ = searchQuery.toLowerCase();
+      const idMatch = o.id.toLowerCase().includes(lowerQ);
+      const numericIdMatch = o.numericId?.toLowerCase().includes(lowerQ);
+      const itemsMatch = o.items?.some(item => item.name.toLowerCase().includes(lowerQ));
+      return idMatch || numericIdMatch || itemsMatch;
+    });
 
   const STATUS_COLOR = {
     'Placed': { bg: '#FEF3C7', text: '#92400E' },
@@ -102,21 +125,27 @@ export default function DashboardScreen({ navigation }) {
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
 
         {/* Hero Header */}
-        <LinearGradient colors={['#00C853', '#00701A']} style={styles.hero}>
+        <LinearGradient colors={['#0D9494', '#00701A']} style={styles.hero}>
           <View style={styles.heroTop}>
             <View>
               <Text style={styles.heroGreet}>Welcome back,</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <Text style={styles.heroName}>{pharmacyName}</Text>
                 <View style={{ backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, marginLeft: 12, marginTop: 4, flexDirection: 'row', alignItems: 'center' }}>
-                  <Text style={{ color: '#fff', fontSize: 13, fontWeight: 'bold' }}>★ {avgRating}</Text>
+                  <Text style={{ color: '#fff', fontSize: 13, fontWeight: 'bold' }}>★ {pharmacyRating}</Text>
                 </View>
               </View>
             </View>
-            <TouchableOpacity style={styles.bellBtn} onPress={() => navigation.navigate('Orders')}>
-              <Bell color="#fff" size={20} />
-              {pending > 0 && <View style={styles.bellBadge}><Text style={styles.bellBadgeText}>{pending}</Text></View>}
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TouchableOpacity style={styles.bellBtn} onPress={() => navigation.navigate('Orders')}>
+                <ClipboardList color="#fff" size={20} />
+                {pending > 0 && <View style={styles.bellBadge}><Text style={styles.bellBadgeText}>{pending}</Text></View>}
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.bellBtn} onPress={() => navigation.navigate('Notifications')}>
+                <Bell color="#fff" size={20} />
+                {unreadCount > 0 && <View style={styles.bellBadge}><Text style={styles.bellBadgeText}>{unreadCount}</Text></View>}
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Revenue Card */}
@@ -124,7 +153,7 @@ export default function DashboardScreen({ navigation }) {
             <View>
               <Text style={styles.revenueLabel}>Net Earnings (All Time)</Text>
               {loading
-                ? <ActivityIndicator color="#00C853" />
+                ? <ActivityIndicator color="#0D9494" />
                 : <Text style={styles.revenueValue}>₹{net.toFixed(2)}</Text>
               }
               <Text style={styles.revenueSub}>After 3% platform fee deducted</Text>
@@ -147,7 +176,7 @@ export default function DashboardScreen({ navigation }) {
         {/* Stats Grid */}
         <View style={styles.statsGrid}>
           {[
-            { label: 'Total Orders', value: totalOrders, icon: Package, color: '#00C853' },
+            { label: 'Total Orders', value: totalOrders, icon: Package, color: '#0D9494' },
             { label: 'New Orders', value: pending, icon: Clock, color: '#F59E0B' },
             { label: 'Ready Pickup', value: readyForPickup, icon: CheckCircle2, color: '#3B82F6' },
             { label: 'Delivered', value: completed, icon: TrendingUp, color: '#8B5CF6' },
@@ -169,7 +198,7 @@ export default function DashboardScreen({ navigation }) {
         <TouchableOpacity style={styles.quickAction} onPress={() => navigation.navigate('Orders')}>
           <View style={styles.quickActionLeft}>
             <View style={styles.quickActionIcon}>
-              <Package color="#00C853" size={22} />
+              <Package color="#0D9494" size={22} />
             </View>
             <View>
               <Text style={styles.quickActionTitle}>Manage Incoming Orders</Text>
@@ -224,24 +253,38 @@ export default function DashboardScreen({ navigation }) {
           </View>
           <View style={styles.breakdownRow}>
             <Text style={[styles.breakdownLabel, { color: '#111827', fontWeight: 'bold', fontSize: 16 }]}>Net to Pharmacy</Text>
-            <Text style={[styles.breakdownValue, { color: '#00C853', fontWeight: 'bold', fontSize: 18 }]}>₹{net.toFixed(2)}</Text>
+            <Text style={[styles.breakdownValue, { color: '#0D9494', fontWeight: 'bold', fontSize: 18 }]}>₹{net.toFixed(2)}</Text>
           </View>
         </View>
 
         {/* Recent Orders */}
         <Text style={styles.sectionTitle}>Recent Orders</Text>
+        <View style={styles.searchContainer}>
+          <Search color="#9CA3AF" size={20} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search recent orders by ID or item..."
+            placeholderTextColor="#9CA3AF"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+        </View>
         <View style={styles.recentCard}>
           {loading ? (
-            <ActivityIndicator color="#00C853" />
+            <ActivityIndicator color="#0D9494" />
           ) : recentOrders.length === 0 ? (
             <Text style={styles.noOrdersText}>No orders yet. They'll appear here once customers place them.</Text>
           ) : (
             recentOrders.map((o, i) => {
               const badge = STATUS_COLOR[o.status] || { bg: '#F3F4F6', text: '#374151' };
               return (
-                <View key={o.id} style={[styles.recentRow, i < recentOrders.length - 1 && styles.recentBorder]}>
+                <TouchableOpacity 
+                  key={o.id} 
+                  style={[styles.recentRow, i < recentOrders.length - 1 && styles.recentBorder]}
+                  onPress={() => setSelectedOrderDetails(o)}
+                >
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.recentId}>#{o.id.slice(-6).toUpperCase()}</Text>
+                    <Text style={styles.recentId}>#{o.numericId || o.id.slice(-6).toUpperCase()}</Text>
                     <Text style={styles.recentItems} numberOfLines={1}>
                       {o.items?.map(i => i.name).join(', ') || 'Items'}
                     </Text>
@@ -252,13 +295,93 @@ export default function DashboardScreen({ navigation }) {
                     </View>
                     <Text style={styles.recentAmount}>₹{o.totalAmount?.toFixed(2)}</Text>
                   </View>
-                </View>
+                </TouchableOpacity>
               );
             })
           )}
         </View>
 
       </ScrollView>
+
+      {/* Order Detail Modal */}
+      <Modal visible={!!selectedOrderDetails} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Order Details</Text>
+              <TouchableOpacity onPress={() => setSelectedOrderDetails(null)}>
+                <XCircle color="#EF4444" size={28} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView contentContainerStyle={styles.detailContent}>
+              <Text style={styles.detailLabel}>Order ID</Text>
+              <Text style={styles.detailValue}>#{selectedOrderDetails?.numericId || selectedOrderDetails?.id?.slice(-6).toUpperCase()}</Text>
+              <Text style={styles.detailLabel}>Status</Text>
+              <Text style={styles.detailValue}>{selectedOrderDetails?.status || 'N/A'}</Text>
+              
+              {selectedOrderDetails?.address ? (
+                <>
+                  <Text style={styles.detailLabel}>Delivery Address</Text>
+                  <Text style={styles.detailValue}>{selectedOrderDetails.address}</Text>
+                </>
+              ) : null}
+              
+              {selectedOrderDetails?.customerName ? (
+                <>
+                  <Text style={styles.detailLabel}>Customer</Text>
+                  <Text style={styles.detailValue}>{selectedOrderDetails.customerName}</Text>
+                </>
+              ) : null}
+
+              {selectedOrderDetails?.customerPhone ? (
+                <>
+                  <Text style={styles.detailLabel}>Customer Phone</Text>
+                  <Text style={styles.detailValue}>{selectedOrderDetails.customerPhone}</Text>
+                </>
+              ) : null}
+
+              <Text style={styles.detailLabel}>Billing</Text>
+              <View style={styles.billingCard}>
+                {(selectedOrderDetails?.items || []).map((item, idx) => (
+                  <View key={idx} style={styles.billingRow}>
+                    <Text style={styles.billingItem}>{item.qty} x {item.name}</Text>
+                    <Text style={styles.billingAmount}>₹{(item.price * item.qty).toFixed(2)}</Text>
+                  </View>
+                ))}
+                <View style={styles.billingRow}>
+                  <Text style={styles.billingItem}>Subtotal</Text>
+                  <Text style={styles.billingAmount}>₹{(selectedOrderDetails?.subtotal || 0).toFixed(2)}</Text>
+                </View>
+                <View style={styles.billingRow}>
+                  <Text style={styles.billingItem}>Delivery Fee</Text>
+                  <Text style={styles.billingAmount}>₹{(selectedOrderDetails?.deliveryFee || 0).toFixed(2)}</Text>
+                </View>
+                <View style={styles.billingRow}>
+                  <Text style={styles.billingItem}>Service Fee</Text>
+                  <Text style={styles.billingAmount}>₹{(selectedOrderDetails?.serviceFee || 0).toFixed(2)}</Text>
+                </View>
+                <View style={[styles.billingRow, { marginTop: 8 }]}> 
+                  <Text style={[styles.billingItem, { fontWeight: 'bold' }]}>Total</Text>
+                  <Text style={[styles.billingAmount, { fontWeight: 'bold' }]}>₹{(selectedOrderDetails?.totalAmount || 0).toFixed(2)}</Text>
+                </View>
+              </View>
+
+              <Text style={styles.detailLabel}>Ratings</Text>
+              <View style={styles.ratingDetailRow}>
+                <Text style={styles.ratingDetailLabel}>Pharmacy Rating</Text>
+                <Text style={styles.ratingDetailValue}>{typeof selectedOrderDetails?.serviceRating === 'number' ? selectedOrderDetails.serviceRating.toFixed(1) : 'N/A'}</Text>
+              </View>
+
+              {selectedOrderDetails?.reviewText ? (
+                <>
+                  <Text style={styles.detailLabel}>Customer Review</Text>
+                  <Text style={styles.detailValue}>{selectedOrderDetails.reviewText}</Text>
+                </>
+              ) : null}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -294,20 +417,36 @@ const styles = StyleSheet.create({
   breakdownBorder: { borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
   breakdownLabel: { fontSize: 14, color: '#6B7280', fontWeight: '500' },
   breakdownValue: { fontSize: 14, fontWeight: '600', color: '#111827' },
-  recentCard: { backgroundColor: '#fff', marginHorizontal: 16, borderRadius: 16, padding: 16, elevation: 1 },
+  recentCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2, marginBottom: 24, marginHorizontal: 16 },
+  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, marginBottom: 12, borderWidth: 1, borderColor: '#E5E7EB', marginHorizontal: 16 },
+  searchInput: { flex: 1, marginLeft: 8, fontSize: 14, color: '#111827' },
   recentRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 },
   recentBorder: { borderBottomWidth: 1, borderBottomColor: '#F9FAFB' },
-  recentId: { fontSize: 15, fontWeight: 'bold', color: '#111827' },
-  recentItems: { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, alignSelf: 'flex-end', marginBottom: 4 },
-  statusText: { fontSize: 10, fontWeight: 'bold' },
-  recentAmount: { fontSize: 14, fontWeight: 'bold', color: '#111827', textAlign: 'right' },
-  noOrdersText: { fontSize: 14, color: '#9CA3AF', textAlign: 'center', paddingVertical: 20 },
+  recentId: { fontSize: 14, fontWeight: 'bold', color: '#111827' },
+  recentItems: { fontSize: 13, color: '#6B7280', marginTop: 2 },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, alignSelf: 'flex-end' },
+  statusText: { fontSize: 11, fontWeight: 'bold' },
+  recentAmount: { fontSize: 14, fontWeight: 'bold', color: '#111827', marginTop: 4, textAlign: 'right' },
+  noOrdersText: { textAlign: 'center', color: '#6B7280', marginVertical: 20 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '80%', padding: 24 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#111827' },
+  detailContent: { paddingBottom: 24 },
+  detailLabel: { fontSize: 12, color: '#6B7280', marginTop: 16, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 'bold' },
+  detailValue: { fontSize: 16, color: '#111827', marginTop: 4, fontWeight: '500' },
+  billingCard: { backgroundColor: '#F9FAFB', borderRadius: 12, padding: 16, marginTop: 8, borderWidth: 1, borderColor: '#E5E7EB' },
+  billingRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
+  billingItem: { fontSize: 14, color: '#4B5563', flex: 1 },
+  billingAmount: { fontSize: 14, color: '#111827', fontWeight: '600' },
+  ratingDetailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
+  ratingDetailLabel: { fontSize: 14, color: '#4B5563' },
+  ratingDetailValue: { fontSize: 14, fontWeight: 'bold', color: '#111827' },
   chartCard: { backgroundColor: '#fff', marginHorizontal: 16, borderRadius: 16, padding: 16, paddingBottom: 10, elevation: 1 },
   chartContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', height: 150 },
   barCol: { alignItems: 'center', width: '13%' },
   barValue: { fontSize: 9, color: '#6B7280', marginBottom: 4, fontWeight: 'bold' },
   barBg: { height: 100, width: 12, backgroundColor: '#F3F4F6', borderRadius: 6, justifyContent: 'flex-end', overflow: 'hidden' },
-  barFill: { backgroundColor: '#00C853', width: '100%', borderRadius: 6 },
+  barFill: { backgroundColor: '#0D9494', width: '100%', borderRadius: 6 },
   barDay: { fontSize: 11, color: '#6B7280', marginTop: 8, fontWeight: '500' },
 });

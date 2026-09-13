@@ -14,7 +14,7 @@ const STATUS_COLORS = {
   'Driver Assigned':        { bg: '#D1FAE5', text: '#065F46', dot: '#10B981' },
   'Picked Up':              { bg: '#DBEAFE', text: '#1D4ED8', dot: '#3B82F6' },
   'Out for Delivery':       { bg: '#DBEAFE', text: '#1D4ED8', dot: '#3B82F6' },
-  'Delivered':              { bg: '#D1FAE5', text: '#065F46', dot: '#00C853' },
+  'Delivered':              { bg: '#D1FAE5', text: '#065F46', dot: '#0D9494' },
   'Cancelled':              { bg: '#FEE2E2', text: '#991B1B', dot: '#EF4444' },
 };
 
@@ -89,7 +89,7 @@ export default function OrderTrackingScreen({ navigation }) {
   if (loading) {
     return (
       <SafeAreaView style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#00C853" />
+        <ActivityIndicator size="large" color="#0D9494" />
       </SafeAreaView>
     );
   }
@@ -226,12 +226,12 @@ const styles = StyleSheet.create({
     width: 28, height: 28, borderRadius: 14,
     backgroundColor: '#E5E7EB', justifyContent: 'center', alignItems: 'center',
   },
-  timelineCircleDone: { backgroundColor: '#00C853' },
+  timelineCircleDone: { backgroundColor: '#0D9494' },
   timelineLine: {
     position: 'absolute', top: 14, left: '50%', right: '-50%',
     height: 2, backgroundColor: '#E5E7EB', zIndex: -1,
   },
-  timelineLineDone: { backgroundColor: '#00C853' },
+  timelineLineDone: { backgroundColor: '#0D9494' },
   timelineLabel: { fontSize: 9, color: '#9CA3AF', textAlign: 'center', marginTop: 4 },
   timelineLabelDone: { color: '#059669', fontWeight: '600' },
   cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#F3F4F6', paddingTop: 12, marginTop: 4 },

@@ -40,14 +40,19 @@ export default function OrdersScreen({ navigation }) {
       try {
         const q = query(
           collection(db, 'orders'),
-          where('userId', '==', currentUser.uid),
-          orderBy('createdAt', 'desc')
+          where('userId', '==', currentUser.uid)
         );
         
         const querySnapshot = await getDocs(q);
         const fetchedOrders = [];
         querySnapshot.forEach((doc) => {
           fetchedOrders.push({ id: doc.id, ...doc.data() });
+        });
+        
+        fetchedOrders.sort((a, b) => {
+          const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : (new Date(a.createdAt).getTime() || 0);
+          const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : (new Date(b.createdAt).getTime() || 0);
+          return timeB - timeA;
         });
         
         setOrders(fetchedOrders);
@@ -101,7 +106,7 @@ export default function OrdersScreen({ navigation }) {
 
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#00C853" />
+          <ActivityIndicator size="large" color="#0D9494" />
         </View>
       ) : orders.length === 0 ? (
         <View style={styles.center}>

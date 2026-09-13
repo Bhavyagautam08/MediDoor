@@ -56,6 +56,10 @@ export default function LoginScreen({ navigation }) {
         navigation.replace('PharmacyRoot');
       } else if (role === 'Delivery Agent') {
         navigation.replace('DeliveryRoot');
+      } else if (role === 'PharmacyPending') {
+        navigation.replace('UnderReview');
+      } else if (role === 'PharmacyRejected') {
+        navigation.replace('Rejected');
       } else {
         navigation.replace('RoleSelection'); // Fallback
       }
@@ -68,6 +72,8 @@ export default function LoginScreen({ navigation }) {
         friendlyMessage = 'Your account exists but role data is missing. Please contact support or create a new account.';
       } else if (error.code === 'auth/too-many-requests') {
         friendlyMessage = 'Too many failed attempts. Please try again later.';
+      } else if (error.message === 'account-suspended') {
+        friendlyMessage = 'Your pharmacy account has been suspended by the admin. Please contact support.';
       }
 
       showAlert('Login Failed', friendlyMessage);
@@ -102,9 +108,9 @@ export default function LoginScreen({ navigation }) {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
 
-          <LinearGradient colors={['#1565C0', '#00C853']} style={styles.header}>
+          <LinearGradient colors={['#003366', '#0D9494']} style={styles.header}>
             <View style={styles.logoCircle}>
-              <Image source={require('../../../assets/logo.jpeg')} style={{ width: 48, height: 48, borderRadius: 12 }} resizeMode="contain" />
+              <Image source={require('../../../assets/logo.png')} style={{ width: 96, height: 96, borderRadius: 24 }} resizeMode="contain" />
             </View>
             <Text style={styles.title}>Welcome Back</Text>
             <Text style={styles.subtitle}>Login to access your account</Text>
@@ -139,7 +145,7 @@ export default function LoginScreen({ navigation }) {
               </View>
               <TouchableOpacity onPress={handleForgotPassword} style={styles.forgotBtn} disabled={resettingPassword}>
                 {resettingPassword ? (
-                  <AnimatedLoader color="#1565C0" size={14} />
+                  <AnimatedLoader color="#003366" size={14} />
                 ) : (
                   <Text style={styles.forgotText}>Forgot Password?</Text>
                 )}
@@ -164,9 +170,19 @@ export default function LoginScreen({ navigation }) {
                 <Text style={styles.signupLink}>Sign up</Text>
               </TouchableOpacity>
             </View>
+
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <TouchableOpacity style={styles.otpBtn} onPress={() => navigation.navigate('OtpLogin')}>
+              <Text style={styles.otpBtnText}>🔐 Login with OTP instead</Text>
+            </TouchableOpacity>
           </Animated.View>
 
-          <Text style={styles.footerText}>MediDoor v3.0 • Secure Login</Text>
+          <Text style={styles.footerText}>Axoro v3.0 • Secure Login</Text>
 
         </ScrollView>
       </KeyboardAvoidingView>
@@ -179,7 +195,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFFFFF' },
   content: { flexGrow: 1 },
   header: { padding: 32, paddingBottom: 48, alignItems: 'center', borderBottomLeftRadius: 32, borderBottomRightRadius: 32 },
-  logoCircle: { width: 64, height: 64, backgroundColor: '#FFFFFF', borderRadius: 16, marginBottom: 16, alignItems: 'center', justifyContent: 'center' },
+  logoCircle: { width: 96, height: 96, backgroundColor: '#FFFFFF', borderRadius: 24, marginBottom: 16, alignItems: 'center', justifyContent: 'center' },
   title: { fontSize: 28, fontWeight: 'bold', color: '#FFFFFF', marginBottom: 8 },
   subtitle: { fontSize: 14, color: '#E0E7FF' },
   formContainer: { padding: 24, marginTop: -20, backgroundColor: '#FFFFFF', borderTopLeftRadius: 32, borderTopRightRadius: 32 },
@@ -190,11 +206,19 @@ const styles = StyleSheet.create({
   passwordInput: { flex: 1, padding: 16, fontSize: 14, color: '#111827' },
   eyeIcon: { padding: 16 },
   forgotBtn: { alignSelf: 'flex-end', marginTop: 12 },
-  forgotText: { color: '#1565C0', fontSize: 13, fontWeight: '600' },
-  button: { backgroundColor: '#1565C0', paddingVertical: 16, borderRadius: 24, alignItems: 'center', marginHorizontal: 16, marginTop: 16 },
+  forgotText: { color: '#003366', fontSize: 13, fontWeight: '600' },
+  button: { backgroundColor: '#003366', paddingVertical: 16, borderRadius: 24, alignItems: 'center', marginHorizontal: 16, marginTop: 16 },
   buttonText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' },
   signupRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 24 },
   signupText: { color: '#6B7280', fontSize: 14 },
-  signupLink: { color: '#1565C0', fontSize: 14, fontWeight: 'bold' },
-  footerText: { textAlign: 'center', fontSize: 10, color: '#9CA3AF', marginTop: 'auto', paddingBottom: 24 }
+  signupLink: { color: '#003366', fontSize: 14, fontWeight: 'bold' },
+  footerText: { textAlign: 'center', fontSize: 10, color: '#9CA3AF', marginTop: 'auto', paddingBottom: 24 },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 20 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: '#E5E7EB' },
+  dividerText: { marginHorizontal: 12, color: '#9CA3AF', fontSize: 13 },
+  otpBtn: {
+    borderWidth: 1.5, borderColor: '#003366', borderRadius: 24, paddingVertical: 14,
+    alignItems: 'center', marginHorizontal: 8, backgroundColor: '#EFF6FF',
+  },
+  otpBtnText: { color: '#003366', fontSize: 15, fontWeight: '700' },
 });

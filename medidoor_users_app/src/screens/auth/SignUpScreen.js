@@ -7,7 +7,8 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../../firebaseConfig';
-import { registerUser } from '../../services/authService';
+import { registerUser, createAuthUser, saveUserDocument } from '../../services/authService';
+import { deleteUser } from 'firebase/auth';
 import MapPickerModal from '../../components/MapPickerModal';
 import CustomAlert from '../../components/CustomAlert';
 import AnimatedLoader from '../../components/AnimatedLoader';
@@ -17,25 +18,24 @@ const uploadImageToStorage = async (uri, folderPath) => {
   
   try {
     const filename = `file_${Date.now()}.jpg`;
-    const bucket = storage.app.options.storageBucket;
     
-    // Use Firebase REST API to bypass React Native Blob completely
-    const uploadUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o?name=${encodeURIComponent(folderPath + '/' + filename)}`;
-
-    const response = await FileSystem.uploadAsync(uploadUrl, uri, {
-      httpMethod: 'POST',
-      uploadType: 0, // 0 = BINARY_CONTENT
-      headers: {
-        'Content-Type': 'image/jpeg',
-      }
+    const blob = await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.onload = function() {
+        resolve(xhr.response);
+      };
+      xhr.onerror = function(e) {
+        reject(new TypeError('Network request failed'));
+      };
+      xhr.responseType = 'blob';
+      xhr.open('GET', uri, true);
+      xhr.send(null);
     });
 
-    if (response.status !== 200) {
-      throw new Error(`Server returned ${response.status}: ${response.body}`);
-    }
-
-    const data = JSON.parse(response.body);
-    return `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(folderPath + '/' + filename)}?alt=media&token=${data.downloadTokens}`;
+    const fileRef = ref(storage, folderPath + '/' + filename);
+    await uploadBytes(fileRef, blob);
+    const downloadUrl = await getDownloadURL(fileRef);
+    return downloadUrl;
   } catch (error) {
     console.error('Error uploading image to storage:', error);
     throw new Error('Failed to upload image. Please check your internet connection and try again.');
@@ -63,7 +63,9 @@ export default function SignUpScreen({ route, navigation }) {
   // Pharmacy specific
   const [pharmacyName, setPharmacyName] = useState('');
   const [pharmacyAddress, setPharmacyAddress] = useState('');
+  const [storeDiscount, setStoreDiscount] = useState('');
   const [licenseUri, setLicenseUri] = useState(null);
+  const [pharmacyImageUri, setPharmacyImageUri] = useState(null);
   const [showMapPicker, setShowMapPicker] = useState(false);
   const [pharmacyLat, setPharmacyLat] = useState(null);
   const [pharmacyLng, setPharmacyLng] = useState(null);
@@ -105,8 +107,9 @@ export default function SignUpScreen({ route, navigation }) {
       showAlert('Invalid Phone', 'Please enter a valid 10-digit phone number.');
       return;
     }
-    if (!email.toLowerCase().endsWith('@gmail.com')) {
-      showAlert('Invalid Email', 'Please use a valid @gmail.com email address.');
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.toLowerCase())) {
+      showAlert('Invalid Email', 'Please enter a valid email address.');
       return;
     }
     if (password.length < 6) {
@@ -129,8 +132,9 @@ export default function SignUpScreen({ route, navigation }) {
         showAlert('Invalid Phone', 'Please enter a valid 10-digit phone number.');
         return;
       }
-      if (!email.toLowerCase().endsWith('@gmail.com')) {
-        showAlert('Invalid Email', 'Please use a valid @gmail.com email address.');
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email.toLowerCase())) {
+        showAlert('Invalid Email', 'Please enter a valid email address.');
         return;
       }
       
@@ -141,6 +145,10 @@ export default function SignUpScreen({ route, navigation }) {
         }
         if (!licenseUri) {
           showAlert('License Required', 'Please upload your pharmacy license to proceed. This is required for verification.');
+          return;
+        }
+        if (!pharmacyImageUri) {
+          showAlert('Pharmacy Picture Required', 'Please upload a picture of your pharmacy store to proceed.');
           return;
         }
       }
@@ -160,21 +168,34 @@ export default function SignUpScreen({ route, navigation }) {
     }
 
     setLoading(true);
+    let authUser = null;
+
     try {
+      if (selectedRole === 'Pharmacy Admin' || selectedRole === 'Delivery Agent') {
+        // Authenticate FIRST so Firebase Storage allows uploads
+        authUser = await createAuthUser(email, password);
+      }
+      
       const generatedId = Math.floor(10000000 + Math.random() * 90000000).toString();
       const additionalData = { name, phone, medidoorId: generatedId };
       
       if (selectedRole === 'Pharmacy Admin') {
         if (!pharmacyLat || !pharmacyLng) {
           showAlert('Location Required', 'Please select your pharmacy location on the map.');
+          if (authUser) await deleteUser(authUser);
           setLoading(false);
           return;
         }
 
-        // Upload Pharmacy License
+        // Upload Pharmacy License and Picture (Will succeed because user is now authenticated)
         let uploadedLicenseUrl = '';
+        let uploadedImageUrl = '';
+        
         if (licenseUri) {
           uploadedLicenseUrl = await uploadImageToStorage(licenseUri, 'pharmacy_licenses');
+        }
+        if (pharmacyImageUri) {
+          uploadedImageUrl = await uploadImageToStorage(pharmacyImageUri, 'pharmacy_images');
         }
 
         additionalData.name = pharmacyName;
@@ -183,9 +204,11 @@ export default function SignUpScreen({ route, navigation }) {
         additionalData.latitude = pharmacyLat;
         additionalData.longitude = pharmacyLng;
         additionalData.licenseUrl = uploadedLicenseUrl;
+        additionalData.image = uploadedImageUrl;
+        additionalData.storeDiscount = storeDiscount ? Number(storeDiscount) : 0;
         additionalData.status = 'pending'; // requires admin approval
       } else if (selectedRole === 'Delivery Agent') {
-        // Upload all delivery agent documents concurrently
+        // Upload all delivery agent documents concurrently (Will succeed because user is authenticated)
         const uploadedDocs = await Promise.all([
           uploadImageToStorage(aadhaarUri, 'delivery_documents/aadhaar'),
           uploadImageToStorage(panUri, 'delivery_documents/pan'),
@@ -208,7 +231,11 @@ export default function SignUpScreen({ route, navigation }) {
         additionalData.status = 'pending'; // requires admin approval
       }
       
-      await registerUser(email, password, selectedRole, additionalData);
+      if (authUser) {
+        await saveUserDocument(authUser.uid, email, selectedRole, additionalData);
+      } else {
+        await registerUser(email, password, selectedRole, additionalData);
+      }
       
       if (selectedRole === 'Pharmacy Admin' || selectedRole === 'Delivery Agent') {
         // Wait for admin approval
@@ -216,7 +243,7 @@ export default function SignUpScreen({ route, navigation }) {
           'Application Submitted! 🎉',
           `Your ${selectedRole === 'Pharmacy Admin' ? 'pharmacy' : 'delivery partner'} application has been submitted. Our team will review your documents and approve your account within 24-48 hours.`,
           'success',
-          [{ text: 'OK', onPress: () => navigation.replace('UnderReview') }]
+          [{ text: 'Continue', onPress: () => navigation.replace('Onboarding', { role: selectedRole }) }]
         );
       } else {
         showAlert('Success!', 'Your account has been created successfully.', 'success', [
@@ -224,7 +251,7 @@ export default function SignUpScreen({ route, navigation }) {
             text: 'Get Started', 
             onPress: () => {
               if (selectedRole === 'Customer') {
-                navigation.replace('CustomerRoot');
+                navigation.replace('Onboarding');
               } else {
                 navigation.replace('RoleSelection');
               }
@@ -233,15 +260,23 @@ export default function SignUpScreen({ route, navigation }) {
         ]);
       }
     } catch (error) {
-      let friendlyMessage = error.message;
+      if (authUser) {
+        try { await deleteUser(authUser); } catch (e) { /* ignore cleanup errors */ }
+      }
+      console.error('Registration error:', error.code, error.message);
+      let friendlyMessage = error.message || 'An unexpected error occurred. Please try again.';
       if (error.code === 'auth/email-already-in-use') {
         friendlyMessage = 'This email is already registered! Please go to the Login screen.';
       } else if (error.code === 'auth/invalid-email') {
         friendlyMessage = 'Please enter a valid email address.';
       } else if (error.code === 'auth/weak-password') {
         friendlyMessage = 'Your password is too weak. Please use at least 6 characters.';
+      } else if (error.code === 'auth/network-request-failed') {
+        friendlyMessage = 'Network error. Please check your internet connection and try again.';
+      } else if (error.code === 'permission-denied' || error.message?.includes('permission')) {
+        friendlyMessage = 'Permission denied. Please try again or contact support.';
       }
-      showAlert('Registration Failed', friendlyMessage);
+      showAlert('Registration Failed', friendlyMessage + (error.code ? `\n\n(Code: ${error.code})` : ''));
     } finally {
       setLoading(false);
     }
@@ -319,19 +354,19 @@ export default function SignUpScreen({ route, navigation }) {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           
-          <LinearGradient colors={['#00C853', '#1565C0']} style={styles.header}>
+          <LinearGradient colors={['#0D9494', '#003366']} style={styles.header}>
             {step === 2 && (
               <TouchableOpacity onPress={() => setStep(1)} style={styles.backButton}>
                 <ChevronLeft color="#FFFFFF" size={28} />
               </TouchableOpacity>
             )}
             <View style={styles.logoCircle}>
-              <Image source={require('../../../assets/logo.jpeg')} style={{width: 64, height: 64, borderRadius: 16}} resizeMode="contain" />
+              <Image source={require('../../../assets/logo.png')} style={{width: 96, height: 96, borderRadius: 24}} resizeMode="contain" />
             </View>
             <Text style={styles.title}>{step === 1 ? 'Create Account' : 'Upload Documents'}</Text>
             <Text style={styles.subtitle}>
               {step === 1 
-                ? `Join the MediDoor network as a ${selectedRole}` 
+                ? `Join the Axoro network as a ${selectedRole}` 
                 : 'Mandatory verification documents'}
             </Text>
           </LinearGradient>
@@ -373,6 +408,25 @@ export default function SignUpScreen({ route, navigation }) {
                         </Text>
                       </TouchableOpacity>
                     </View>
+
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.label}>Storewide Discount % (Optional)</Text>
+                      <TextInput 
+                        style={styles.input} 
+                        placeholder="e.g. 10" 
+                        keyboardType="numeric"
+                        value={storeDiscount}
+                        onChangeText={setStoreDiscount}
+                      />
+                      <Text style={{ fontSize: 11, color: '#9CA3AF', marginTop: 4 }}>This discount will automatically apply to the total bill of all orders from your pharmacy.</Text>
+                    </View>
+
+                    <DocumentUploader 
+                      title="Pharmacy Store Picture"
+                      subtitle="Required. This picture will be shown to customers in the app."
+                      uri={pharmacyImageUri}
+                      setUri={setPharmacyImageUri}
+                    />
 
                     <DocumentUploader 
                       title="Pharmacy License / Registration Certificate"
@@ -481,7 +535,7 @@ export default function SignUpScreen({ route, navigation }) {
 
           </Animated.View>
 
-          <Text style={styles.footerText}>MediDoor v3.0 • Secure Encryption</Text>
+          <Text style={styles.footerText}>Axoro v3.0 • Secure Encryption</Text>
 
         </ScrollView>
       </KeyboardAvoidingView>
@@ -507,7 +561,7 @@ const styles = StyleSheet.create({
   content: { flexGrow: 1 },
   header: { padding: 32, paddingBottom: 48, alignItems: 'center', borderBottomLeftRadius: 32, borderBottomRightRadius: 32, position: 'relative' },
   backButton: { position: 'absolute', top: 48, left: 24, zIndex: 10 },
-  logoCircle: { width: 64, height: 64, backgroundColor: '#FFFFFF', borderRadius: 16, marginBottom: 16, justifyContent: 'center', alignItems: 'center' },
+  logoCircle: { width: 96, height: 96, backgroundColor: '#FFFFFF', borderRadius: 24, marginBottom: 16, justifyContent: 'center', alignItems: 'center' },
   title: { fontSize: 28, fontWeight: 'bold', color: '#FFFFFF', marginBottom: 8 },
   subtitle: { fontSize: 14, color: '#E0E7FF' },
   formContainer: { padding: 24, marginTop: -20, backgroundColor: '#FFFFFF', borderTopLeftRadius: 32, borderTopRightRadius: 32 },
@@ -518,11 +572,11 @@ const styles = StyleSheet.create({
   passwordInput: { flex: 1, padding: 16, fontSize: 14, color: '#111827' },
   eyeIcon: { padding: 16 },
   termsText: { textAlign: 'center', fontSize: 12, color: '#6B7280', marginVertical: 16 },
-  createButton: { backgroundColor: '#00C853', paddingVertical: 16, borderRadius: 24, alignItems: 'center', marginHorizontal: 16 },
+  createButton: { backgroundColor: '#0D9494', paddingVertical: 16, borderRadius: 24, alignItems: 'center', marginHorizontal: 16 },
   createButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' },
   loginRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 24 },
   loginText: { color: '#6B7280', fontSize: 14 },
-  loginLink: { color: '#00C853', fontSize: 14, fontWeight: 'bold' },
+  loginLink: { color: '#0D9494', fontSize: 14, fontWeight: 'bold' },
   footerText: { textAlign: 'center', fontSize: 10, color: '#9CA3AF', marginTop: 'auto', paddingBottom: 24 },
   licenseBox: { borderWidth: 2, borderColor: '#E5E7EB', borderStyle: 'dashed', borderRadius: 12, overflow: 'hidden', minHeight: 140 },
   licensePreview: { width: '100%', height: 160, resizeMode: 'cover' },

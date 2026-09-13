@@ -10,6 +10,7 @@ export default function SettingsScreen({ navigation }) {
   const [settings, setSettings] = useState({
     baseDeliveryFee: '0',
     platformCommission: '15',
+    customerServiceFee: '15',
     subscriptionsEnabled: false,
     promoCodesEnabled: false,
     haltOrders: false,
@@ -29,6 +30,7 @@ export default function SettingsScreen({ navigation }) {
         setSettings({
           baseDeliveryFee: data.baseDeliveryFee?.toString() || '0',
           platformCommission: data.platformCommission?.toString() || '15',
+          customerServiceFee: data.customerServiceFee?.toString() || '15',
           subscriptionsEnabled: !!data.subscriptionsEnabled,
           promoCodesEnabled: !!data.promoCodesEnabled,
           haltOrders: !!data.haltOrders,
@@ -48,6 +50,7 @@ export default function SettingsScreen({ navigation }) {
       await setDoc(docRef, {
         baseDeliveryFee: parseFloat(settings.baseDeliveryFee) || 0,
         platformCommission: parseFloat(settings.platformCommission) || 0,
+        customerServiceFee: parseFloat(settings.customerServiceFee) || 0,
         subscriptionsEnabled: settings.subscriptionsEnabled,
         promoCodesEnabled: settings.promoCodesEnabled,
         haltOrders: settings.haltOrders,
@@ -121,6 +124,20 @@ export default function SettingsScreen({ navigation }) {
               onChangeText={(text) => setSettings(prev => ({ ...prev, baseDeliveryFee: text }))}
             />
             <Text style={styles.helperText}>The minimum fee charged to the Customer for delivery.</Text>
+          </View>
+
+          <View style={styles.inputCard}>
+            <View style={styles.inputHeader}>
+              <ShieldCheck color="#64748B" size={20} />
+              <Text style={styles.inputLabel}>Customer Service Fee (₹)</Text>
+            </View>
+            <TextInput
+              style={styles.textInput}
+              keyboardType="numeric"
+              value={settings.customerServiceFee}
+              onChangeText={(text) => setSettings(prev => ({ ...prev, customerServiceFee: text }))}
+            />
+            <Text style={styles.helperText}>The fixed platform fee charged to the Customer per order.</Text>
           </View>
         </View>
 

@@ -14,8 +14,10 @@ import DashboardUsersScreen from './src/screens/DashboardUsersScreen';
 import SendNotificationScreen from './src/screens/SendNotificationScreen';
 import SettlementsScreen from './src/screens/SettlementsScreen';
 import DisputesScreen from './src/screens/DisputesScreen';
+import AdvertisementsScreen from './src/screens/AdvertisementsScreen';
 import { auth, db } from './src/firebaseConfig';
 import { ActivityIndicator, View } from 'react-native';
+import { registerForPushNotificationsAsync, registerNotificationListeners, savePushToken } from './src/services/pushNotifications';
 
 const Stack = createNativeStackNavigator();
 
@@ -24,6 +26,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const unsubscribeListeners = registerNotificationListeners();
     const unsubscribe = onAuthStateChanged(auth, async (usr) => {
       if (usr) {
         try {
@@ -33,14 +36,23 @@ export default function App() {
             createdAt: new Date(),
             role: 'Platform Admin'
           }, { merge: true });
+
+          // Register Push Notifications
+          const token = await registerForPushNotificationsAsync();
+          if (token) {
+            await savePushToken(usr.uid, 'Platform Admin', token);
+          }
         } catch (error) {
-          console.error("Failed to upgrade role:", error);
+          console.error("Failed to upgrade role or register push:", error);
         }
       }
       setUser(usr);
       setLoading(false);
     });
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      unsubscribeListeners();
+    };
   }, []);
 
   if (loading) {
@@ -65,6 +77,7 @@ export default function App() {
           <Stack.Screen name="SendNotification" component={SendNotificationScreen} />
           <Stack.Screen name="Settlements" component={SettlementsScreen} />
           <Stack.Screen name="Disputes" component={DisputesScreen} />
+          <Stack.Screen name="Advertisements" component={AdvertisementsScreen} />
         </Stack.Navigator>
       ) : (
         <LoginScreen />

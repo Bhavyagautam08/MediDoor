@@ -14,7 +14,7 @@ export default function CustomerTabs() {
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#00C853',
+        tabBarActiveTintColor: '#0D9494',
         tabBarStyle: { height: 74, paddingBottom: 16, paddingTop: 8 },
         tabBarLabelStyle: { fontSize: 12, fontWeight: '600' },
       }}
@@ -25,7 +25,7 @@ export default function CustomerTabs() {
         options={{
           tabBarIcon: ({ color }) => <House color={color} size={24} />,
           tabBarLabel: 'Home',
-          title: 'MediDoor',
+          title: 'Axoro',
         }}
       />
       <Tab.Screen

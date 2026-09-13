@@ -85,12 +85,16 @@ export default function EarningsScreen() {
       data.sort((a, b) => (b.deliveredAt || b.createdAt || 0) - (a.deliveredAt || a.createdAt || 0));
       setDeliveries(data);
       setLoading(false);
+    }, (err) => {
+      if (err.code !== 'permission-denied') console.error('Earnings orders snapshot error:', err);
     });
 
     const profileUnsub = onSnapshot(doc(db, 'delivery_agents', currentUser.uid), (docSnap) => {
       if (docSnap.exists()) {
         setRiderProfile(docSnap.data());
       }
+    }, (err) => {
+      if (err.code !== 'permission-denied') console.error('Earnings profile snapshot error:', err);
     });
 
     return () => {

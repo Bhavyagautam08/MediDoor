@@ -99,7 +99,7 @@ export default function PaymentsScreen({ navigation }) {
         </View>
 
         {loading ? (
-          <ActivityIndicator size="large" color="#00C853" style={{ marginTop: 40 }} />
+          <ActivityIndicator size="large" color="#0D9494" style={{ marginTop: 40 }} />
         ) : (
           <FlatList
             data={cards}
@@ -114,7 +114,7 @@ export default function PaymentsScreen({ navigation }) {
             renderItem={({ item }) => (
               <View style={styles.cardItem}>
                 <View style={styles.cardLeft}>
-                  <CreditCard color="#00C853" size={24} />
+                  <CreditCard color="#0D9494" size={24} />
                   <View style={{ marginLeft: 12 }}>
                     <Text style={styles.cardType}>{item.type}</Text>
                     <Text style={styles.cardNumber}>**** **** **** {item.last4}</Text>

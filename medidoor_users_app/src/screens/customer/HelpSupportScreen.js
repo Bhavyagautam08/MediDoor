@@ -44,7 +44,7 @@ const FAQ_DATA = [
     icon: CreditCard,
     questions: [
       { q: "What payment methods do you accept?", a: "We accept Credit/Debit Cards, UPI (Google Pay, PhonePe, Paytm), Net Banking, and Cash on Delivery (COD)." },
-      { q: "Is it safe to use my card on MediDoor?", a: "Absolutely. All transactions are encrypted and processed through Razorpay, a highly secure, industry-standard payment gateway." },
+      { q: "Is it safe to use my card on Axoro?", a: "Absolutely. All transactions are encrypted and processed through Razorpay, a highly secure, industry-standard payment gateway." },
       { q: "Why did my transaction fail?", a: "Transactions may fail due to network issues or bank server downtime. Please try again or use an alternative payment method." },
       { q: "Money was deducted but order not placed?", a: "Do not worry! The deducted amount will automatically be refunded to your original payment method within 3-5 business days." },
       { q: "How does the Monthly Subscription work?", a: "You can subscribe to regular medicines at checkout. We will automatically place the order for you every 30 days and give you a flat 10% discount!" },
@@ -64,7 +64,7 @@ const FAQ_DATA = [
       { q: "How do you ensure medicine authenticity?", a: "We partner exclusively with verified, licensed local pharmacies to guarantee 100% genuine medicines." },
       { q: "Do you sell generic substitutes?", a: "Yes! If you upload a prescription, our pharmacy partners may suggest generic alternatives with the exact same composition to help you save money." },
       { q: "Are the medicines stored properly?", a: "Yes, all pharmacies are vetted for strict temperature control, and cold-chain items like insulin are delivered in insulated bags." },
-      { q: "Can I consult a doctor on MediDoor?", a: "We currently focus on rapid delivery, but we are working on integrating tele-consultations in the near future!" }
+      { q: "Can I consult a doctor on Axoro?", a: "We currently focus on rapid delivery, but we are working on integrating tele-consultations in the near future!" }
     ]
   },
   {
@@ -76,8 +76,8 @@ const FAQ_DATA = [
       { q: "How do I delete my account?", a: "If you wish to permanently delete your account and all associated data, please raise a ticket from the Contact Us tab." },
       { q: "I forgot my password.", a: "On the login screen, tap 'Forgot Password' to receive a reset link on your registered email address." },
       { q: "Can I share my account with family?", a: "You can order for family members using your account by simply adding a new delivery address for them at checkout." },
-      { q: "Why am I not receiving notifications?", a: "Please check your device's settings to ensure push notifications are enabled for the MediDoor app." },
-      { q: "What is MediDoor Premium?", a: "MediDoor Premium is a loyalty program offering zero delivery fees and exclusive discounts. Look for the banner in your Profile!" },
+      { q: "Why am I not receiving notifications?", a: "Please check your device's settings to ensure push notifications are enabled for the Axoro app." },
+      { q: "What is Axoro Premium?", a: "Axoro Premium is a loyalty program offering zero delivery fees and exclusive discounts. Look for the banner in your Profile!" },
       { q: "How do I log out?", a: "Go to your Profile and tap the Log Out icon in the top right corner." }
     ]
   }
@@ -305,7 +305,7 @@ const styles = StyleSheet.create({
   tabButton: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 8 },
   tabButtonActive: { backgroundColor: '#F0FDF4' },
   tabText: { fontSize: 15, fontWeight: '600', color: '#6B7280' },
-  tabTextActive: { color: '#00C853' },
+  tabTextActive: { color: '#0D9494' },
 
   content: { flex: 1, padding: 16 },
   
@@ -333,7 +333,7 @@ const styles = StyleSheet.create({
   dropdownItem: { padding: 14, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
   dropdownItemText: { fontSize: 15, color: '#374151' },
 
-  submitBtn: { backgroundColor: '#00C853', borderRadius: 12, height: 54, alignItems: 'center', justifyContent: 'center', marginTop: 32 },
+  submitBtn: { backgroundColor: '#0D9494', borderRadius: 12, height: 54, alignItems: 'center', justifyContent: 'center', marginTop: 32 },
   submitBtnDisabled: { backgroundColor: '#A7F3D0' },
   submitBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
 });

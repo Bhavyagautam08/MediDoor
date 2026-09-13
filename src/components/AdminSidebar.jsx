@@ -32,7 +32,7 @@ const AdminSidebar = () => {
     <div className="admin-sidebar">
       <div className="sidebar-header">
         <div className="logo-container">
-          <img src="/logo.jpeg" alt="MediDoor Logo" style={{ width: '40px', height: '40px', objectFit: 'contain' }} />
+          <img src="/logo.png" alt="MediDoor Logo" style={{ width: '40px', height: '40px', objectFit: 'contain' }} />
         </div>
         <h2>MediDoor Admin</h2>
       </div>

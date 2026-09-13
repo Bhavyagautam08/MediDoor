@@ -4,20 +4,24 @@ import { X, Star, ChevronDown, ChevronUp, Check } from 'lucide-react-native';
 
 const { width, height } = Dimensions.get('window');
 
-export default function RatingModal({ visible, onClose, onSubmit, pharmacyName, driverName, orderItems = [], ratingTarget = 'pharmacy' }) {
-  const [pharmacyRating, setPharmacyRating] = useState(0);
-  const [driverRating, setDriverRating] = useState(0);
+export default function RatingModal({ 
+  visible, 
+  onClose, 
+  onSubmit, 
+  pharmacyName, 
+  driverName, 
+  orderItems = [],
+  initialPharmacyRating,
+  initialDriverRating,
+  ratingTarget = 'both'
+}) {
+  const [pharmacyRating, setPharmacyRating] = useState(initialPharmacyRating || 0);
+  const [driverRating, setDriverRating] = useState(initialDriverRating || 0);
   const [review, setReview] = useState('');
-  const [expandedSection, setExpandedSection] = useState('dishes');
-  const [ratedDishes, setRatedDishes] = useState({});
 
   const handleSubmit = () => {
     if (pharmacyRating === 0 && driverRating === 0) return;
-    onSubmit({ pharmacyRating, driverRating, review, ratedDishes });
-  };
-
-  const toggleSection = (section) => {
-    setExpandedSection(prev => prev === section ? null : section);
+    onSubmit({ pharmacyRating, driverRating, review });
   };
 
   return (
@@ -46,9 +50,9 @@ export default function RatingModal({ visible, onClose, onSubmit, pharmacyName, 
           <ScrollView style={styles.scrollContent} keyboardShouldPersistTaps="handled">
             
             {/* Delivery Agent Rating */}
-            {driverName && (
+            {(ratingTarget === 'delivery' || ratingTarget === 'both') && !initialDriverRating && (
               <View style={styles.ratingSection}>
-                <Text style={styles.ratingSectionTitle}>How was the delivery by {driverName}?</Text>
+                <Text style={styles.ratingSectionTitle}>How was the delivery by {driverName || 'Delivery Partner'}?</Text>
                 <View style={styles.starsContainer}>
                   {[1, 2, 3, 4, 5].map(i => (
                     <TouchableOpacity key={`driver-${i}`} onPress={() => setDriverRating(i)} activeOpacity={0.7}>
@@ -65,97 +69,58 @@ export default function RatingModal({ visible, onClose, onSubmit, pharmacyName, 
             )}
 
             {/* Pharmacy Rating */}
-            <View style={styles.ratingSection}>
-              <Text style={styles.ratingSectionTitle}>How was the order from {pharmacyName || 'Pharmacy Partner'}?</Text>
-              <View style={styles.starsContainer}>
-                {[1, 2, 3, 4, 5].map(i => (
-                  <TouchableOpacity key={`pharmacy-${i}`} onPress={() => setPharmacyRating(i)} activeOpacity={0.7}>
-                    <Star 
-                      color={i <= pharmacyRating ? "#F59E0B" : "#D1D5DB"} 
-                      size={36} 
-                      fill={i <= pharmacyRating ? "#F59E0B" : "none"} 
-                      style={styles.starIcon}
-                    />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            {/* Rate Dishes Section (Collapsible) */}
-              <View style={styles.sectionCard}>
-                <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection('dishes')}>
-                  <View>
-                    <Text style={styles.sectionTitle}>Rate your ordered items</Text>
-                    <View style={styles.sectionSubtitleRow}>
-                      <Check color="#9CA3AF" size={14} />
-                      <Text style={styles.sectionSubtitle}>
-                        {Object.keys(ratedDishes).length}/{orderItems.length || 1} items Rated
-                      </Text>
-                    </View>
-                  </View>
-                  {expandedSection === 'dishes' ? <ChevronUp color="#111827" size={20} /> : <ChevronDown color="#111827" size={20} />}
-                </TouchableOpacity>
-                
-                {expandedSection === 'dishes' && (
-                  <View style={styles.sectionContent}>
-                    {(orderItems.length > 0 ? orderItems : [{ id: '1', name: 'Prescription Medicines' }]).map((item, idx) => (
-                      <View key={idx} style={styles.dishRow}>
-                        <Text style={styles.dishName}>{item.name}</Text>
-                        <View style={styles.dishStars}>
-                          {[1, 2, 3, 4, 5].map(i => (
-                            <TouchableOpacity 
-                              key={i} 
-                              onPress={() => setRatedDishes(prev => ({ ...prev, [idx]: i }))}
-                            >
-                              <Star 
-                                color={i <= (ratedDishes[idx] || 0) ? "#F59E0B" : "#D1D5DB"} 
-                                size={24} 
-                                fill={i <= (ratedDishes[idx] || 0) ? "#F59E0B" : "none"} 
-                                style={{ marginLeft: 6 }}
-                              />
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-                      </View>
-                    ))}
-                  </View>
-                )}
-              </View>
-
-            {/* Detailed Review Section (Collapsible) */}
-            <View style={styles.sectionCard}>
-              <TouchableOpacity style={styles.sectionHeader} onPress={() => toggleSection('review')}>
-                <Text style={styles.sectionTitle}>Add a detailed review</Text>
-                {expandedSection === 'review' ? <ChevronUp color="#111827" size={20} /> : <ChevronDown color="#111827" size={20} />}
-              </TouchableOpacity>
-              
-              {expandedSection === 'review' && (
-                <View style={styles.sectionContent}>
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder="Tell us about the medicines/items you ordered here...."
-                    placeholderTextColor="#9CA3AF"
-                    multiline
-                    textAlignVertical="top"
-                    value={review}
-                    onChangeText={setReview}
-                  />
+            {(ratingTarget === 'pharmacy' || ratingTarget === 'both') && !initialPharmacyRating && (
+              <View style={styles.ratingSection}>
+                <Text style={styles.ratingSectionTitle}>How was the order from {pharmacyName || 'Pharmacy Partner'}?</Text>
+                <View style={styles.starsContainer}>
+                  {[1, 2, 3, 4, 5].map(i => (
+                    <TouchableOpacity key={`pharmacy-${i}`} onPress={() => setPharmacyRating(i)} activeOpacity={0.7}>
+                      <Star 
+                        color={i <= pharmacyRating ? "#F59E0B" : "#D1D5DB"} 
+                        size={36} 
+                        fill={i <= pharmacyRating ? "#F59E0B" : "none"} 
+                        style={styles.starIcon}
+                      />
+                    </TouchableOpacity>
+                  ))}
                 </View>
-              )}
+              </View>
+            )}
+
+            {/* Text Review */}
+            <View style={styles.ratingSection}>
+              <Text style={styles.ratingSectionTitle}>Leave a Review</Text>
+              <TextInput
+                style={styles.textInput}
+                placeholder="What did you like or dislike?"
+                placeholderTextColor="#9CA3AF"
+                multiline
+                numberOfLines={3}
+                value={review}
+                onChangeText={setReview}
+              />
             </View>
 
           </ScrollView>
 
           {/* Fixed Submit Button */}
-          <View style={styles.footer}>
-            <TouchableOpacity 
-              style={[styles.submitButton, (pharmacyRating === 0 && driverRating === 0) && { opacity: 0.5 }]} 
-              onPress={handleSubmit}
-              disabled={pharmacyRating === 0 && driverRating === 0}
-            >
-              <Text style={styles.submitButtonText}>Submit</Text>
-            </TouchableOpacity>
-          </View>
+          {(() => {
+            const isDisabled = 
+              (ratingTarget === 'pharmacy' && pharmacyRating === 0) || 
+              (ratingTarget === 'delivery' && driverRating === 0) ||
+              (ratingTarget === 'both' && pharmacyRating === 0 && driverRating === 0);
+            return (
+              <View style={styles.footer}>
+                <TouchableOpacity 
+                  style={[styles.submitButton, isDisabled && { opacity: 0.5 }]} 
+                  onPress={handleSubmit}
+                  disabled={isDisabled}
+                >
+                  <Text style={styles.submitButtonText}>Submit</Text>
+                </TouchableOpacity>
+              </View>
+            );
+          })()}
 
         </KeyboardAvoidingView>
       </View>

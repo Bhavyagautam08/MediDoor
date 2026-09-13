@@ -6,14 +6,18 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './firebaseConfig';
 import { getUserRole } from './services/authService';
 import { registerForPushNotificationsAsync, registerNotificationListeners, savePushToken } from './services/pushNotifications';
+import { navigationRef } from './navigation/NavigationService';
+import * as Notifications from 'expo-notifications';
 
 // Auth Screens
 import IntroScreen from './screens/auth/IntroScreen';
 import RoleSelectionScreen from './screens/auth/RoleSelectionScreen';
 import SignUpScreen from './screens/auth/SignUpScreen';
 import LoginScreen from './screens/auth/LoginScreen';
+import OtpLoginScreen from './screens/auth/OtpLoginScreen';
 import UnderReviewScreen from './screens/auth/UnderReviewScreen';
 import RejectedScreen from './screens/auth/RejectedScreen';
+import OnboardingScreen from './screens/auth/OnboardingScreen';
 
 // Role Navigators
 import CustomerTabs from './navigation/CustomerTabs';
@@ -34,13 +38,28 @@ import UpiPaymentScreen from './screens/customer/UpiPaymentScreen';
 import NotificationsScreen from './screens/customer/NotificationsScreen';
 import AllPharmaciesScreen from './screens/customer/AllPharmaciesScreen';
 import HelpSupportScreen from './screens/customer/HelpSupportScreen';
+import LikedPharmaciesScreen from './screens/customer/LikedPharmaciesScreen';
+import ShopByCategoryScreen from './screens/customer/ShopByCategoryScreen';
 import MapScreen from './screens/delivery/MapScreen';
+
+import FloatingActiveOrder from './components/FloatingActiveOrder';
 
 const Stack = createNativeStackNavigator();
 
 export default function AppNavigator() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [initialRoute, setInitialRoute] = useState('Login');
+  const [currentRouteName, setCurrentRouteName] = useState('');
+  const response = Notifications.useLastNotificationResponse();
+
+  useEffect(() => {
+    if (response && !isInitializing && navigationRef.isReady()) {
+      const data = response.notification.request.content.data;
+      if (data?.type === 'live_prescription') {
+        navigationRef.navigate('PharmacyRoot', { screen: 'Prescriptions' });
+      }
+    }
+  }, [response, isInitializing]);
 
   useEffect(() => {
     const unsubscribeListeners = registerNotificationListeners();
@@ -64,7 +83,11 @@ export default function AppNavigator() {
           else if (role === 'Delivery Agent') setInitialRoute('DeliveryRoot');
           else setInitialRoute('RoleSelection');
         } catch (error) {
-          console.error("Error fetching user role on startup:", error);
+          if (error.message === 'account-suspended') {
+            console.log("Account suspended, redirecting to login.");
+          } else {
+            console.error("Error fetching user role on startup:", error);
+          }
           setInitialRoute('Login');
         }
       } else {
@@ -82,21 +105,29 @@ export default function AppNavigator() {
   if (isInitializing) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#00C853" />
+        <ActivityIndicator size="large" color="#0D9494" />
       </View>
     );
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer 
+      ref={navigationRef}
+      onStateChange={() => {
+        const routeName = navigationRef.current?.getCurrentRoute()?.name;
+        if (routeName) setCurrentRouteName(routeName);
+      }}
+    >
       <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName={initialRoute}>
         {/* Onboarding Flow */}
         <Stack.Screen name="Intro" component={IntroScreen} />
         <Stack.Screen name="RoleSelection" component={RoleSelectionScreen} />
         <Stack.Screen name="SignUp" component={SignUpScreen} />
         <Stack.Screen name="Login" component={LoginScreen} />
+        <Stack.Screen name="OtpLogin" component={OtpLoginScreen} />
         <Stack.Screen name="UnderReview" component={UnderReviewScreen} />
         <Stack.Screen name="Rejected" component={RejectedScreen} />
+        <Stack.Screen name="Onboarding" component={OnboardingScreen} />
         
         {/* Customer Flow */}
         <Stack.Screen name="CustomerRoot" component={CustomerTabs} />
@@ -113,6 +144,8 @@ export default function AppNavigator() {
         <Stack.Screen name="Notifications" component={NotificationsScreen} />
         <Stack.Screen name="AllPharmacies" component={AllPharmaciesScreen} />
         <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
+        <Stack.Screen name="LikedPharmacies" component={LikedPharmaciesScreen} />
+        <Stack.Screen name="ShopByCategory" component={ShopByCategoryScreen} />
 
         {/* Pharmacy Flow */}
         <Stack.Screen name="PharmacyRoot" component={PharmacyTabs} />
@@ -122,6 +155,7 @@ export default function AppNavigator() {
         <Stack.Screen name="Map" component={MapScreen} />
 
       </Stack.Navigator>
+      <FloatingActiveOrder currentRouteName={currentRouteName} />
     </NavigationContainer>
   );
 }

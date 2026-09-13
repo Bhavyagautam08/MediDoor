@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Modal, TextInput, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Modal, TouchableOpacity } from 'react-native';
+import OtpInput from './OtpInput';
 
 export default function OtpModal({ visible, onClose, onSubmit }) {
   const [otp, setOtp] = useState('');
@@ -11,15 +12,12 @@ export default function OtpModal({ visible, onClose, onSubmit }) {
           <Text style={styles.title}>Enter Drop-off PIN</Text>
           <Text style={styles.desc}>Ask the customer for their 6-digit or 4-digit PIN to confirm the delivery.</Text>
           
-          <TextInput
-            style={styles.input}
-            placeholder="Enter PIN"
-            keyboardType="default"
-            autoCapitalize="characters"
-            maxLength={6}
+          <OtpInput
+            length={6}
             value={otp}
             onChangeText={setOtp}
           />
+
           
           <View style={styles.btnRow}>
             <TouchableOpacity style={[styles.btn, styles.cancelBtn]} onPress={onClose}>

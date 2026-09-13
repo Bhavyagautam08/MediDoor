@@ -13,14 +13,23 @@ export default function DashboardRevenueScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const q = query(collection(db, 'orders'), where('status', '==', 'delivered'));
+    const q = query(collection(db, 'orders'), where('status', 'in', ['delivered', 'Delivered']));
     const unsub = onSnapshot(q, (snapshot) => {
       let total = 0;
       const recent = [];
       snapshot.forEach(doc => {
         const data = doc.data();
-        total += (data.totalAmount || 0);
-        recent.push({ id: doc.id, ...data });
+        
+        const sub = Number(data.subtotal || 0);
+        const del = Number(data.deliveryFee || 0);
+        const serv = Number(data.serviceFee || 15);
+        const commRate = Number(data.platformCommission || 15) / 100;
+        const pCut = del ? Math.max(30, Math.floor(del * 0.8)) : 0;
+        
+        const platformRev = serv + (del - pCut) + (sub * commRate);
+        
+        total += platformRev;
+        recent.push({ id: doc.id, ...data, platformRev });
       });
       // Sort by date desc
       recent.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -82,7 +91,7 @@ export default function DashboardRevenueScreen({ navigation }) {
     const orderDate = new Date(order.createdAt).toLocaleDateString();
     const day = last7Days.find(d => d.dateString === orderDate);
     if (day) {
-      day.total += (order.totalAmount || 0);
+      day.total += (order.platformRev || 0);
     }
   });
 
@@ -115,8 +124,8 @@ export default function DashboardRevenueScreen({ navigation }) {
           <View style={styles.iconContainer}>
             <TrendingUp color="#10B981" size={32} />
           </View>
-          <Text style={styles.summaryTitle}>Total Processed Revenue</Text>
-          <Text style={styles.summaryAmount}>₹{revenue.toLocaleString()}</Text>
+          <Text style={styles.summaryTitle}>Total Platform Revenue</Text>
+          <Text style={styles.summaryAmount}>₹{revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
           <Text style={styles.summarySub}>From {orders.length} completed orders</Text>
         </View>
 
@@ -149,7 +158,7 @@ export default function DashboardRevenueScreen({ navigation }) {
               <Text style={styles.orderDate}>{new Date(order.createdAt).toLocaleDateString()}</Text>
             </View>
             <View style={styles.orderRight}>
-              <Text style={styles.orderAmount}>₹{order.totalAmount}</Text>
+              <Text style={styles.orderAmount}>+ ₹{(order.platformRev || 0).toFixed(2)}</Text>
             </View>
           </View>
         ))}

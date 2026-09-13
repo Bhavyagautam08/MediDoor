@@ -5,8 +5,9 @@ import { ArrowLeft, MapPin, CreditCard, CheckCircle, UploadCloud, RefreshCw, Che
 import { useSelector, useDispatch } from 'react-redux';
 import { clearCart } from '../../store/slices/cartSlice';
 import { collection, addDoc, getDoc, doc } from 'firebase/firestore';
-import { db, auth, app } from '../../firebaseConfig';
+import { db, auth, app, storage } from '../../firebaseConfig';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import * as ImagePicker from 'expo-image-picker';
 
 export default function CheckoutScreen({ route, navigation }) {
@@ -23,8 +24,10 @@ export default function CheckoutScreen({ route, navigation }) {
   const [subscribeRefill, setSubscribeRefill] = useState(false);
   const [showBillDetails, setShowBillDetails] = useState(false);
   const [isSubscriptionFeatureEnabled, setIsSubscriptionFeatureEnabled] = useState(false);
+  const [globalSettings, setGlobalSettings] = useState(null);
 
   const [deliveryCharge, setDeliveryCharge] = useState(quoteData ? quoteData.deliveryFee : (cartBilling ? cartBilling.deliveryFee : 0));
+  const storeDiscount = quoteData ? (quoteData.storeDiscount || 0) : (cartBilling ? (cartBilling.storeDiscount || 0) : 0);
   const [distanceKm, setDistanceKm] = useState(0);
   const [etaMins, setEtaMins] = useState(cartBilling ? cartBilling.etaMins : 0);
   const [isCalculatingFee, setIsCalculatingFee] = useState(false);
@@ -32,8 +35,8 @@ export default function CheckoutScreen({ route, navigation }) {
   const [pharmacyCoords, setPharmacyCoords] = useState(null);
 
   // Use the exact bill provided by the Cart or Quote
-  const serviceFee = quoteData ? 15 : (cartBilling ? (cartBilling.serviceFee || 15) : 15);
-  const finalTotal = quoteData ? quoteData.totalAmount : (cartBilling ? cartBilling.total : (totalAmount + deliveryCharge + serviceFee));
+  const serviceFee = quoteData ? (Number(globalSettings?.customerServiceFee) || 15) : (cartBilling ? (cartBilling.serviceFee || 15) : (Number(globalSettings?.customerServiceFee) || 15));
+  const finalTotal = quoteData ? quoteData.totalAmount : (cartBilling ? cartBilling.total : (totalAmount - storeDiscount + deliveryCharge + serviceFee));
   const medicinesTotal = quoteData ? quoteData.medicinesPrice : (cartBilling ? cartBilling.subtotal : totalAmount);
 
   let itemsList = [];
@@ -105,8 +108,12 @@ export default function CheckoutScreen({ route, navigation }) {
                     // Fee formula only calculated if NOT using a pre-calculated quote AND NOT using cart billing
                     try {
         const settingsDoc = await getDoc(doc(db, 'settings', 'app_features'));
-        if (settingsDoc.exists() && settingsDoc.data().enableSubscriptions === true) {
-          setIsSubscriptionFeatureEnabled(true);
+        if (settingsDoc.exists()) {
+          const sData = settingsDoc.data();
+          setGlobalSettings(sData);
+          if (sData.subscriptionsEnabled === true) {
+            setIsSubscriptionFeatureEnabled(true);
+          }
         }
       } catch (err) {
         console.log("Failed to fetch admin settings:", err);
@@ -123,6 +130,9 @@ export default function CheckoutScreen({ route, navigation }) {
                       else if (distKm <= 14) calcFee = 105;
                       else if (distKm <= 16) calcFee = 120;
                       else calcFee = 135;
+                      
+                      const baseDFee = Number(globalSettings?.baseDeliveryFee) || 0;
+                      if (calcFee < baseDFee) calcFee = baseDFee;
                       
                       setDeliveryCharge(calcFee);
                     }
@@ -230,9 +240,11 @@ export default function CheckoutScreen({ route, navigation }) {
         paymentStatus: razorpayPaymentId ? 'paid' : 'pending',
         razorpayPaymentId: razorpayPaymentId || null,
         subtotal: Number(medicinesTotal) || 0,
+        storeDiscount: Number(storeDiscount) || 0,
         totalAmount: Number(finalTotal) || 0,
         deliveryFee: Number(deliveryCharge) || 0,
         serviceFee: Number(serviceFee) || 0,
+        platformCommission: Number(medicinesTotal) > 300 ? 2 : (cartBilling ? (cartBilling.platformCommission || 15) : (Number(globalSettings?.platformCommission) || 15)),
         items: itemsList || [],
         status: 'Placed', // Send to Pharmacy's "New" tab
         createdAt: new Date().toISOString(),
@@ -285,13 +297,33 @@ export default function CheckoutScreen({ route, navigation }) {
 
       if (!result.canceled) {
         setIsUploading(true);
-        // Simulate upload delay
-        setTimeout(() => {
-          setPrescriptionUrl(result.assets[0].uri);
+        
+        try {
+          const uri = result.assets[0].uri;
+          const filename = `prescription_${Date.now()}.jpg`;
+          
+          const blob = await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.onload = function() { resolve(xhr.response); };
+            xhr.onerror = function() { reject(new TypeError('Network request failed')); };
+            xhr.responseType = 'blob';
+            xhr.open('GET', uri, true);
+            xhr.send(null);
+          });
+
+          const fileRef = ref(storage, 'prescriptions/' + filename);
+          await uploadBytes(fileRef, blob);
+          const downloadUrl = await getDownloadURL(fileRef);
+
+          setPrescriptionUrl(downloadUrl);
           setPrescriptionUploaded(true);
           setIsUploading(false);
-          Alert.alert('Success', 'Prescription uploaded!');
-        }, 1000);
+          Alert.alert('Success', 'Prescription uploaded successfully!');
+        } catch (uploadError) {
+          console.error('Upload Error:', uploadError);
+          setIsUploading(false);
+          Alert.alert('Upload Failed', 'Could not upload the image. Please try again.');
+        }
       }
     } catch (error) {
       console.error(error); Alert.alert("Error", String(error || "An unexpected error occurred"));
@@ -314,7 +346,7 @@ export default function CheckoutScreen({ route, navigation }) {
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
             <View style={styles.sectionHeaderTitle}>
-              <MapPin color="#00C853" size={20} />
+              <MapPin color="#0D9494" size={20} />
               <Text style={styles.sectionTitle}>Delivery Address</Text>
             </View>
             <TouchableOpacity onPress={() => navigation.navigate('Addresses')}>
@@ -379,7 +411,7 @@ export default function CheckoutScreen({ route, navigation }) {
         {/* Payment Method */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <CreditCard color="#00C853" size={20} />
+            <CreditCard color="#0D9494" size={20} />
             <Text style={styles.sectionTitle}>Payment Method</Text>
           </View>
 
@@ -391,7 +423,7 @@ export default function CheckoutScreen({ route, navigation }) {
               {paymentMethod === 'cod' && <View style={styles.radioDot} />}
             </View>
             <Text style={styles.paymentText}>💵  Cash on Delivery</Text>
-            <CheckCircle color={paymentMethod === 'cod' ? '#00C853' : '#E5E7EB'} size={20} />
+            <CheckCircle color={paymentMethod === 'cod' ? '#0D9494' : '#E5E7EB'} size={20} />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -405,7 +437,7 @@ export default function CheckoutScreen({ route, navigation }) {
               <Text style={styles.paymentText}>💳  UPI / Card / Wallet</Text>
               <Text style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>Powered by Razorpay • Secure Checkout</Text>
             </View>
-            <CheckCircle color={paymentMethod === 'online' ? '#00C853' : '#E5E7EB'} size={20} />
+            <CheckCircle color={paymentMethod === 'online' ? '#0D9494' : '#E5E7EB'} size={20} />
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -435,10 +467,16 @@ export default function CheckoutScreen({ route, navigation }) {
               <Text style={styles.billLabel}>Medicine Cost</Text>
               <Text style={styles.billValue}>₹{medicinesTotal.toFixed(2)}</Text>
             </View>
+            {storeDiscount > 0 && (
+              <View style={styles.billRow}>
+                <Text style={[styles.billLabel, { color: '#0D9494' }]}>Store Discounts</Text>
+                <Text style={[styles.billValue, { color: '#0D9494' }]}>-₹{storeDiscount.toFixed(2)}</Text>
+              </View>
+            )}
             <View style={styles.billRow}>
               <Text style={styles.billLabel}>Delivery Charge</Text>
               {isCalculatingFee ? (
-                <ActivityIndicator size="small" color="#00C853" />
+                <ActivityIndicator size="small" color="#0D9494" />
               ) : (
                 <Text style={styles.billValue}>₹{deliveryCharge.toFixed(2)}</Text>
               )}
@@ -463,7 +501,7 @@ export default function CheckoutScreen({ route, navigation }) {
           <Text style={styles.footerTotalAmount}>₹{finalTotal.toFixed(2)}</Text>
           <View style={styles.viewBillBtn}>
             <Text style={styles.viewBillText}>View detailed bill</Text>
-            {showBillDetails ? <ChevronDown color="#00C853" size={16} /> : <ChevronUp color="#00C853" size={16} />}
+            {showBillDetails ? <ChevronDown color="#0D9494" size={16} /> : <ChevronUp color="#0D9494" size={16} />}
           </View>
           {etaMins > 0 && !isCalculatingFee && (
              <Text style={styles.etaSubtext}>Arriving in {etaMins} mins</Text>
@@ -513,7 +551,7 @@ const styles = StyleSheet.create({
   sectionHeaderTitle: { flexDirection: 'row', alignItems: 'center' },
   sectionTitle: { fontSize: 16, fontWeight: 'bold', color: '#111827', marginLeft: 8 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  changeAddressText: { color: '#00C853', fontWeight: 'bold', fontSize: 14 },
+  changeAddressText: { color: '#0D9494', fontWeight: 'bold', fontSize: 14 },
   loadingAddressText: { color: '#6B7280', fontSize: 14 },
   addressDisplayBox: { backgroundColor: '#F9FAFB', borderRadius: 12, padding: 16, borderWidth: 1, borderColor: '#E5E7EB' },
   addressDisplayText: { fontSize: 14, color: '#374151', lineHeight: 22 },
@@ -531,9 +569,9 @@ const styles = StyleSheet.create({
   toggleKnob: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#FFF', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 2, elevation: 3 },
   toggleKnobActive: { transform: [{ translateX: 20 }] },
   paymentOption: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', marginBottom: 10 },
-  paymentSelected: { borderColor: '#00C853', backgroundColor: '#F0FDF4', borderWidth: 2 },
-  paymentRadio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: '#00C853', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#00C853' },
+  paymentSelected: { borderColor: '#0D9494', backgroundColor: '#F0FDF4', borderWidth: 2 },
+  paymentRadio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: '#0D9494', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#0D9494' },
   paymentText: { flex: 1, fontSize: 15, fontWeight: '600', color: '#111827' },
   
   expandedBillBox: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.05, shadowRadius: 5, elevation: 5, borderBottomWidth: 1, borderBottomColor: '#F3F4F6', maxHeight: 400 },
@@ -557,9 +595,9 @@ const styles = StyleSheet.create({
   footerLeft: { flex: 1, justifyContent: 'center' },
   footerTotalAmount: { fontSize: 22, fontWeight: '900', color: '#111827' },
   viewBillBtn: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
-  viewBillText: { fontSize: 13, fontWeight: '700', color: '#00C853', marginRight: 4 },
-  etaSubtext: { fontSize: 12, color: '#00C853', fontWeight: 'bold', marginTop: 4 },
-  placeOrderButton: { backgroundColor: '#00C853', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 24, alignItems: 'center', shadowColor: '#00C853', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 5 },
+  viewBillText: { fontSize: 13, fontWeight: '700', color: '#0D9494', marginRight: 4 },
+  etaSubtext: { fontSize: 12, color: '#0D9494', fontWeight: 'bold', marginTop: 4 },
+  placeOrderButton: { backgroundColor: '#0D9494', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 24, alignItems: 'center', shadowColor: '#0D9494', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 5 },
   placeOrderText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },

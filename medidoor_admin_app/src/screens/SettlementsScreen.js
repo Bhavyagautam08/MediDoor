@@ -41,7 +41,8 @@ export default function SettlementsScreen({ navigation }) {
 
         const subtotal = order.subtotal || 0;
         const deliveryFee = order.deliveryFee || 0;
-        const pharmacyCut = subtotal - (subtotal * commissionRate);
+        const orderCommRate = order.platformCommission !== undefined ? (Number(order.platformCommission) / 100) : commissionRate;
+        const pharmacyCut = subtotal - (subtotal * orderCommRate);
         
         // Tally Pharmacy
         if (order.pharmacyId) {

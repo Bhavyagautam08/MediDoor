@@ -15,11 +15,11 @@ export default function IntroScreen({ navigation }) {
   return (
     <View style={styles.container}>
       {/* Top Gradient Area */}
-      <LinearGradient colors={['#1565C0', '#00C853']} style={styles.topSection}>
+      <LinearGradient colors={['#003366', '#0D9494']} style={styles.topSection}>
         <View style={styles.logoIcon}>
-          <Image source={require('../../../assets/logo.jpeg')} style={{width: 64, height: 64, borderRadius: 16}} resizeMode="contain" />
+          <Image source={require('../../../assets/logo.png')} style={{width: 64, height: 64, borderRadius: 16}} resizeMode="contain" />
         </View>
-        <Text style={styles.title}>MediDoor</Text>
+        <Text style={styles.title}>Axoro</Text>
         <Text style={styles.subtitle}>Medicines Delivered to Your Doorstep</Text>
       </LinearGradient>
 
@@ -30,7 +30,7 @@ export default function IntroScreen({ navigation }) {
         <View style={styles.grid}>
           {services.map((s, i) => (
             <View key={i} style={styles.serviceCard}>
-              <s.icon color="#1565C0" size={24} style={styles.serviceIcon} />
+              <s.icon color="#003366" size={24} style={styles.serviceIcon} />
               <Text style={styles.serviceText}>{s.title}</Text>
             </View>
           ))}
@@ -59,6 +59,6 @@ const styles = StyleSheet.create({
   serviceCard: { width: '48%', backgroundColor: '#F9FAFB', padding: 20, borderRadius: 16, alignItems: 'center', marginBottom: 16 },
   serviceIcon: { marginBottom: 12 },
   serviceText: { fontSize: 12, fontWeight: '600', color: '#374151', textAlign: 'center' },
-  signupButton: { backgroundColor: '#00C853', borderRadius: 12, paddingVertical: 16, alignItems: 'center' },
+  signupButton: { backgroundColor: '#0D9494', borderRadius: 12, paddingVertical: 16, alignItems: 'center' },
   signupText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' }
 });

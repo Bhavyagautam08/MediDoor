@@ -64,12 +64,12 @@ export default function EditProfileScreen({ navigation }) {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Edit Profile</Text>
         <TouchableOpacity onPress={handleSave} disabled={saving}>
-          {saving ? <ActivityIndicator color="#00C853" size="small" /> : <Text style={styles.saveText}>Save</Text>}
+          {saving ? <ActivityIndicator color="#0D9494" size="small" /> : <Text style={styles.saveText}>Save</Text>}
         </TouchableOpacity>
       </View>
 
       {loading ? (
-        <ActivityIndicator size="large" color="#00C853" style={{ marginTop: 40 }} />
+        <ActivityIndicator size="large" color="#0D9494" style={{ marginTop: 40 }} />
       ) : (
         <View style={styles.content}>
           <View style={styles.inputGroup}>
@@ -121,7 +121,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
   backButton: { padding: 8, marginLeft: -8 },
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#111827' },
-  saveText: { fontSize: 16, fontWeight: 'bold', color: '#00C853', padding: 8 },
+  saveText: { fontSize: 16, fontWeight: 'bold', color: '#0D9494', padding: 8 },
   content: { padding: 24 },
   inputGroup: { marginBottom: 24 },
   label: { fontSize: 14, fontWeight: 'bold', color: '#374151', marginBottom: 8 },

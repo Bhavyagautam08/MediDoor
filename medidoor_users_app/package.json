@@ -43,5 +43,8 @@
     "ios": "expo run:ios",
     "web": "expo start --web"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "sharp": "^0.35.4"
+  }
 }

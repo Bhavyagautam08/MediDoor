@@ -8,7 +8,7 @@ export default function RoleSelectionScreen({ navigation, onRoleSelected }) {
 
   const roles = [
     { id: 'Customer',       title: 'Customer',          desc: 'Order medicines for home delivery',  icon: User,     color: '#E8F5E9', iconColor: '#212121' },
-    { id: 'Pharmacy Admin', title: 'Pharmacy Partner',  desc: 'Manage orders and inventory',         icon: Building, color: '#E3F2FD', iconColor: '#1565C0' },
+    { id: 'Pharmacy Admin', title: 'Pharmacy Partner',  desc: 'Manage orders and inventory',         icon: Building, color: '#E3F2FD', iconColor: '#003366' },
     { id: 'Delivery Agent', title: 'Delivery Partner',  desc: 'Earn by delivering medicines',         icon: Truck,    color: '#FFF3E0', iconColor: '#E65100' },
   ];
 
@@ -17,13 +17,13 @@ export default function RoleSelectionScreen({ navigation, onRoleSelected }) {
       <View style={styles.headerArea}>
         <View style={styles.iconBox}>
           <Image 
-            source={require('../../../assets/logo.jpeg')} 
+            source={require('../../../assets/logo.png')} 
             style={{ width: 60, height: 60, borderRadius: 16 }} 
             resizeMode="contain"
           />
         </View>
-        <Text style={styles.title}>Welcome to MediDoor</Text>
-        <Text style={styles.subtitle}>How will you use MediDoor?</Text>
+        <Text style={styles.title}>Welcome to Axoro</Text>
+        <Text style={styles.subtitle}>How will you use Axoro?</Text>
       </View>
 
       <View style={styles.content}>
@@ -75,15 +75,15 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 16, color: '#111827', fontWeight: '500' },
   content: { padding: 24, marginTop: -24 },
   roleCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3F4F6', borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 2, borderColor: 'transparent' },
-  selectedCard: { borderColor: '#00C853', backgroundColor: '#FFFFFF' },
+  selectedCard: { borderColor: '#0D9494', backgroundColor: '#FFFFFF' },
   cardIconBox: { width: 56, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginRight: 16 },
   cardTextCol: { flex: 1 },
   cardTitle: { fontSize: 16, fontWeight: 'bold', color: '#111827', marginBottom: 4 },
   cardDesc: { fontSize: 12, color: '#6B7280' },
   footer: { padding: 24, backgroundColor: '#F3F4F6', marginTop: 'auto' },
-  continueButton: { backgroundColor: '#00C853', borderRadius: 24, paddingVertical: 16, alignItems: 'center', marginBottom: 24 },
+  continueButton: { backgroundColor: '#0D9494', borderRadius: 24, paddingVertical: 16, alignItems: 'center', marginBottom: 24 },
   continueText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' },
   loginRow: { flexDirection: 'row', justifyContent: 'center' },
   loginText: { color: '#6B7280', fontSize: 14 },
-  loginLink: { color: '#00C853', fontSize: 14, fontWeight: 'bold' }
+  loginLink: { color: '#0D9494', fontSize: 14, fontWeight: 'bold' }
 });

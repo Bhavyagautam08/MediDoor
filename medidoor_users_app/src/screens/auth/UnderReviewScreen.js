@@ -64,7 +64,7 @@ export default function UnderReviewScreen({ navigation }) {
             <Text style={styles.stepsTitle}>What happens next?</Text>
 
             <View style={styles.step}>
-              <View style={[styles.stepDot, { backgroundColor: '#00C853' }]}>
+              <View style={[styles.stepDot, { backgroundColor: '#0D9494' }]}>
                 <Text style={styles.stepNum}>1</Text>
               </View>
               <View style={{ flex: 1 }}>
@@ -99,7 +99,7 @@ export default function UnderReviewScreen({ navigation }) {
           </View>
 
           <View style={styles.autoNote}>
-            <CheckCircle2 color="#00C853" size={16} />
+            <CheckCircle2 color="#0D9494" size={16} />
             <Text style={styles.autoNoteText}>
               This screen will automatically update — no need to refresh!
             </Text>
@@ -107,7 +107,7 @@ export default function UnderReviewScreen({ navigation }) {
         </View>
 
         <View style={styles.footer}>
-          <Text style={styles.helpText}>Questions? Email us at <Text style={{ color: '#00C853', fontWeight: 'bold' }}>support@medidoor.com</Text></Text>
+          <Text style={styles.helpText}>Questions? Email us at <Text style={{ color: '#0D9494', fontWeight: 'bold' }}>support@axoro.in</Text></Text>
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
             <Text style={styles.logoutButtonText}>Logout</Text>
           </TouchableOpacity>

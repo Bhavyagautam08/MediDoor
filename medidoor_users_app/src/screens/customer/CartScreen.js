@@ -1,22 +1,36 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, Store, Plus, Minus, Info, Zap, Clock, CheckCircle, Circle } from 'lucide-react-native';
 import { useSelector, useDispatch, shallowEqual } from 'react-redux';
 import { addToCart, removeFromCart, clearCart } from '../../store/slices/cartSlice';
+import { getDoc, doc } from 'firebase/firestore';
+import { db } from '../../firebaseConfig';
 
 export default function CartScreen({ navigation }) {
   const dispatch = useDispatch();
   const { items: cartItems, totalAmount } = useSelector(state => state.cart, shallowEqual);
 
   const [deliveryType, setDeliveryType] = useState('standard'); // 'standard' | 'fast'
+  const [globalSettings, setGlobalSettings] = useState(null);
+
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const sDoc = await getDoc(doc(db, 'settings', 'app_features'));
+        if (sDoc.exists()) setGlobalSettings(sDoc.data());
+      } catch (err) {}
+    };
+    fetchSettings();
+  }, []);
 
   const itemsByPharmacy = cartItems.reduce((acc, item) => {
     const pId = item.medicine.pharmacyId || 'unknown';
     if (!acc[pId]) {
       acc[pId] = {
-        pharmacyName: item.medicine.pharmacyObj?.name || 'Medidoor Partner Pharmacy',
+        pharmacyName: item.medicine.pharmacyObj?.name || 'Axoro Partner Pharmacy',
         distance: item.medicine.pharmacyObj?.numericDist || 2,
+        storeDiscount: item.medicine.pharmacyObj?.storeDiscount ? Number(item.medicine.pharmacyObj.storeDiscount) : 0,
         items: []
       };
     }
@@ -28,9 +42,17 @@ export default function CartScreen({ navigation }) {
 
   let totalStandardFee = 0;
   let maxDistance = 0;
+  let totalDiscount = 0;
 
   Object.values(itemsByPharmacy).forEach(group => {
     let dist = group.distance || 0;
+    
+    // Calculate discount for this store
+    let storeSubtotal = group.items.reduce((sum, i) => sum + (i.medicine.price * i.quantity), 0);
+    if (group.storeDiscount > 0) {
+      totalDiscount += storeSubtotal * (group.storeDiscount / 100);
+    }
+
     let fee = 35;
     if (dist <= 2) fee = 35;
     else if (dist <= 4) fee = 45;
@@ -42,6 +64,9 @@ export default function CartScreen({ navigation }) {
     else if (dist <= 16) fee = 120;
     else fee = 135;
     
+    const baseDFee = Number(globalSettings?.baseDeliveryFee) || 0;
+    if (fee < baseDFee) fee = baseDFee;
+    
     totalStandardFee += fee;
     
     if (dist > maxDistance) {
@@ -50,8 +75,8 @@ export default function CartScreen({ navigation }) {
   });
 
   const deliveryCharge = totalAmount > 0 ? totalStandardFee : 0;
-  const serviceFee = totalAmount > 0 ? 15 : 0;
-  const finalTotal = totalAmount + deliveryCharge + serviceFee;
+  const serviceFee = totalAmount > 0 ? (Number(globalSettings?.customerServiceFee) || 15) : 0;
+  const finalTotal = totalAmount - totalDiscount + deliveryCharge + serviceFee;
 
   // Dynamic ETA Calculation (Indian Micro-logistics Model)
   const baseStdTime = Math.ceil(10 + (maxDistance * 5) + ((numStores - 1) * 10));
@@ -78,7 +103,7 @@ export default function CartScreen({ navigation }) {
             {Object.entries(itemsByPharmacy).map(([pId, group]) => (
               <View key={pId} style={styles.pharmacyGroup}>
                 <View style={styles.pharmacyHeader}>
-                  <Store color="#1565C0" size={18} />
+                  <Store color="#003366" size={18} />
                   <Text style={styles.pharmacyName}>{group.pharmacyName}</Text>
                 </View>
 
@@ -95,7 +120,7 @@ export default function CartScreen({ navigation }) {
                       </TouchableOpacity>
                       <Text style={styles.qtyText}>{item.quantity}</Text>
                       <TouchableOpacity onPress={() => dispatch(addToCart(item.medicine))}>
-                        <Plus color="#00C853" size={20} />
+                        <Plus color="#0D9494" size={20} />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -108,6 +133,13 @@ export default function CartScreen({ navigation }) {
               
               <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Medicine Cost</Text><Text style={styles.summaryValue}>₹{totalAmount.toFixed(2)}</Text></View>
               
+              {totalDiscount > 0 && (
+                <View style={styles.summaryRow}>
+                  <Text style={[styles.summaryLabel, { color: '#0D9494' }]}>Store Discounts</Text>
+                  <Text style={[styles.summaryValue, { color: '#0D9494' }]}>-₹{totalDiscount.toFixed(2)}</Text>
+                </View>
+              )}
+
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>Delivery Charge</Text>
                 <Text style={styles.summaryValue}>₹{deliveryCharge.toFixed(2)}</Text>
@@ -127,10 +159,12 @@ export default function CartScreen({ navigation }) {
               onPress={() => navigation.navigate('Checkout', { 
                 cartBilling: {
                   subtotal: totalAmount,
+                  storeDiscount: totalDiscount,
                   deliveryFee: deliveryCharge,
                   serviceFee: serviceFee,
+                  platformCommission: Number(globalSettings?.platformCommission) || 15,
                   total: finalTotal,
-                  etaMins: parseInt(stdEtaString.split(' ')[0]) || 30
+                  etaMins: Math.ceil(baseStdTime + 5)
                 }
               })}
             >
@@ -175,8 +209,8 @@ const styles = StyleSheet.create({
   summaryValue: { color: '#111827', fontSize: 14, fontWeight: 'bold' },
   dashedDivider: { width: '100%', borderWidth: 1, borderColor: '#E5E7EB', borderStyle: 'dashed', borderRadius: 1, marginVertical: 8 },
   summaryTotalLabel: { fontSize: 16, fontWeight: '900', color: '#111827' },
-  summaryTotalValue: { fontSize: 18, fontWeight: '900', color: '#00C853' },
+  summaryTotalValue: { fontSize: 18, fontWeight: '900', color: '#0D9494' },
   footer: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#FFFFFF', padding: 16, paddingBottom: 24, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
-  checkoutButton: { backgroundColor: '#00C853', borderRadius: 12, paddingVertical: 16, alignItems: 'center' },
+  checkoutButton: { backgroundColor: '#0D9494', borderRadius: 12, paddingVertical: 16, alignItems: 'center' },
   checkoutText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' },
 });

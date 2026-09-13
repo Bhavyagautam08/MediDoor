@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity } from 'react-native';
-import { Users, Store, ShoppingBag, TrendingUp, Settings, Megaphone } from 'lucide-react-native';
+import { Users, Store, ShoppingBag, TrendingUp, Settings, Megaphone, MonitorPlay } from 'lucide-react-native';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 
@@ -9,9 +9,9 @@ const StatCard = ({ title, value, icon: Icon, color, onPress }) => (
     style={[styles.card, { borderLeftColor: color }]}
     onPress={onPress}
   >
-    <View>
-      <Text style={styles.cardTitle}>{title}</Text>
-      <Text style={styles.cardValue}>{value}</Text>
+    <View style={{ flex: 1, paddingRight: 8 }}>
+      <Text style={styles.cardTitle} numberOfLines={1} adjustsFontSizeToFit>{title}</Text>
+      <Text style={styles.cardValue} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
     </View>
     <View style={[styles.iconContainer, { backgroundColor: `${color}20` }]}>
       <Icon color={color} size={24} />
@@ -22,7 +22,7 @@ const StatCard = ({ title, value, icon: Icon, color, onPress }) => (
 export default function DashboardScreen({ navigation }) {
   const [stats, setStats] = useState({
     revenue: 0,
-    activeOrders: 0,
+    totalOrders: 0,
     pharmacies: 0,
     users: 0,
   });
@@ -37,14 +37,18 @@ export default function DashboardScreen({ navigation }) {
       
       snapshot.forEach(doc => {
         const data = doc.data();
-        if (data.status === 'delivered') {
-          totalRevenue += (data.totalAmount || 0);
-        } else if (data.status !== 'cancelled' && data.status !== 'cancel') {
-          activeCount++;
+        if (data.status === 'delivered' || data.status === 'Delivered') {
+          const sub = Number(data.subtotal || 0);
+          const del = Number(data.deliveryFee || 0);
+          const serv = Number(data.serviceFee || 15);
+          const commRate = Number(data.platformCommission || 15) / 100;
+          const pCut = del ? Math.max(30, Math.floor(del * 0.8)) : 0;
+          
+          totalRevenue += serv + (del - pCut) + (sub * commRate);
         }
       });
       
-      setStats(prev => ({ ...prev, revenue: totalRevenue, activeOrders: activeCount }));
+      setStats(prev => ({ ...prev, revenue: totalRevenue, totalOrders: snapshot.size }));
     });
 
     // 2. Listen to Pharmacies
@@ -86,16 +90,22 @@ export default function DashboardScreen({ navigation }) {
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <TouchableOpacity 
-            style={[styles.settingsBtn, { marginRight: 12 }]}
+            style={[styles.settingsBtn, { marginRight: 8 }]}
+            onPress={() => navigation.navigate('Advertisements')}
+          >
+            <MonitorPlay color="#8B5CF6" size={22} />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.settingsBtn, { marginRight: 8 }]}
             onPress={() => navigation.navigate('SendNotification')}
           >
-            <Megaphone color="#3B82F6" size={24} />
+            <Megaphone color="#3B82F6" size={22} />
           </TouchableOpacity>
           <TouchableOpacity 
             style={styles.settingsBtn}
             onPress={() => navigation.navigate('Settings')}
           >
-            <Settings color="#64748B" size={24} />
+            <Settings color="#64748B" size={22} />
           </TouchableOpacity>
         </View>
       </View>
@@ -106,8 +116,8 @@ export default function DashboardScreen({ navigation }) {
         </View>
       ) : (
         <View style={styles.statsContainer}>
-          <StatCard title="Total Revenue" value={`₹${stats.revenue.toLocaleString()}`} icon={TrendingUp} color="#10B981" onPress={() => navigation.navigate('DashboardRevenue')} />
-          <StatCard title="Active Orders" value={stats.activeOrders.toString()} icon={ShoppingBag} color="#3B82F6" onPress={() => navigation.navigate('DashboardOrders')} />
+          <StatCard title="Platform Revenue" value={`₹${stats.revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} icon={TrendingUp} color="#10B981" onPress={() => navigation.navigate('DashboardRevenue')} />
+          <StatCard title="Total Orders" value={stats.totalOrders.toString()} icon={ShoppingBag} color="#3B82F6" onPress={() => navigation.navigate('DashboardOrders')} />
           <StatCard title="Pharmacies" value={stats.pharmacies.toString()} icon={Store} color="#8B5CF6" onPress={() => navigation.navigate('DashboardPharmacies')} />
           <StatCard title="Total Users" value={stats.users.toString()} icon={Users} color="#F59E0B" onPress={() => navigation.navigate('DashboardUsers')} />
         </View>
@@ -184,7 +194,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   settingsBtn: {
-    padding: 8,
+    padding: 6,
     backgroundColor: '#F8FAFC',
     borderRadius: 20,
     borderWidth: 1,

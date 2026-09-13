@@ -88,7 +88,7 @@ export default function PrescriptionQuotesScreen({ route, navigation }) {
           <Text style={styles.pharmacyName}>{item.pharmacyName}</Text>
           <View style={styles.ratingRow}>
             <ShieldCheck color="#059669" size={14} style={{ marginRight: 4 }} />
-            <Text style={styles.ratingText}>{item.pharmacyRating || '4.5'} Rating</Text>
+            <Text style={styles.ratingText}>{item.pharmacyRating || 'New'} Rating</Text>
             <Text style={styles.dot}> • </Text>
             <MapPin color="#6B7280" size={14} style={{ marginRight: 4 }} />
             <Text style={styles.distanceText}>{item.distanceKm}</Text>
@@ -144,7 +144,7 @@ export default function PrescriptionQuotesScreen({ route, navigation }) {
 
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator color="#00C853" size="large" />
+          <ActivityIndicator color="#0D9494" size="large" />
           <Text style={styles.loadingText}>Connecting to pharmacies...</Text>
         </View>
       ) : quotes.length === 0 ? (
@@ -241,8 +241,8 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 18, fontWeight: 'bold', color: '#374151', marginBottom: 8 },
   subEmptyText: { textAlign: 'center', color: '#6B7280', fontSize: 14, lineHeight: 20 },
   quoteCard: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, marginBottom: 16, elevation: 1, borderWidth: 1, borderColor: '#E5E7EB' },
-  bestValueCard: { borderColor: '#00C853', borderWidth: 2 },
-  bestValueBadge: { position: 'absolute', top: -12, right: 16, backgroundColor: '#00C853', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12 },
+  bestValueCard: { borderColor: '#0D9494', borderWidth: 2 },
+  bestValueBadge: { position: 'absolute', top: -12, right: 16, backgroundColor: '#0D9494', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12 },
   bestValueText: { color: '#FFFFFF', fontSize: 10, fontWeight: 'bold', textTransform: 'uppercase' },
   quoteHeader: { marginBottom: 12 },
   pharmacyName: { fontSize: 18, fontWeight: 'bold', color: '#111827', marginBottom: 4 },
@@ -256,7 +256,7 @@ const styles = StyleSheet.create({
   costValue: { color: '#111827', fontSize: 14, fontWeight: '500' },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
   totalLabel: { color: '#111827', fontSize: 16, fontWeight: 'bold' },
-  totalValue: { color: '#00C853', fontSize: 20, fontWeight: 'bold' },
+  totalValue: { color: '#0D9494', fontSize: 20, fontWeight: 'bold' },
   acceptBtn: { flexDirection: 'row', backgroundColor: '#111827', paddingVertical: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   acceptBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' },
   
@@ -272,6 +272,6 @@ const styles = StyleSheet.create({
   customModalBtnSecondaryText: { color: '#4B5563', fontWeight: 'bold', fontSize: 15 },
   customModalBtnDanger: { flex: 1, paddingVertical: 14, borderRadius: 12, backgroundColor: '#EF4444', alignItems: 'center' },
   customModalBtnDangerText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 15 },
-  customModalBtnPrimary: { flex: 1, paddingVertical: 14, borderRadius: 12, backgroundColor: '#00C853', alignItems: 'center' },
+  customModalBtnPrimary: { flex: 1, paddingVertical: 14, borderRadius: 12, backgroundColor: '#0D9494', alignItems: 'center' },
   customModalBtnPrimaryText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 15 }
 });

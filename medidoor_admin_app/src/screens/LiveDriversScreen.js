@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Dimensions, ActivityIndicator } from 'react-native';
 import { Navigation } from 'lucide-react-native';
 import MapView, { Marker } from 'react-native-maps';
@@ -11,6 +11,7 @@ export default function LiveDriversScreen() {
   const [drivers, setDrivers] = useState([]);
   const [allDriversData, setAllDriversData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const mapRef = useRef(null);
 
   useEffect(() => {
     const q = query(collection(db, 'delivery_agents'));
@@ -40,11 +41,20 @@ export default function LiveDriversScreen() {
       });
       setDrivers(active);
     };
-    
     filterActive();
     const interval = setInterval(filterActive, 30000); // Re-check every 30 seconds
     return () => clearInterval(interval);
   }, [allDriversData]);
+
+  useEffect(() => {
+    if (drivers.length > 0 && mapRef.current) {
+      const coords = drivers.map(d => d.liveLocation);
+      mapRef.current.fitToCoordinates(coords, {
+        edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
+        animated: true,
+      });
+    }
+  }, [drivers]);
 
   if (loading) {
     return (
@@ -65,6 +75,7 @@ export default function LiveDriversScreen() {
       </View>
       
       <MapView
+        ref={mapRef}
         style={styles.map}
         initialRegion={{
           latitude: drivers.length > 0 ? drivers[0].liveLocation.latitude : 28.5355,

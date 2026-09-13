@@ -80,13 +80,13 @@ export default function RejectedScreen({ navigation }) {
             </View>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.actionRow} onPress={() => Linking.openURL('mailto:support@medidoor.com?subject=Pharmacy Application Rejected - Appeal')}>
+          <TouchableOpacity style={styles.actionRow} onPress={() => Linking.openURL('mailto:support@axoro.in?subject=Pharmacy Application Rejected - Appeal')}>
             <View style={[styles.actionIcon, { backgroundColor: '#EFF6FF' }]}>
               <Mail color="#3B82F6" size={18} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.actionTitle}>Contact support to appeal</Text>
-              <Text style={styles.actionDesc}>Email support@medidoor.com to discuss your application.</Text>
+              <Text style={styles.actionDesc}>Email support@axoro.in to discuss your application.</Text>
             </View>
           </TouchableOpacity>
         </View>

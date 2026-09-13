@@ -31,7 +31,7 @@ const AdminLogin = () => {
     <div className="login-container">
       <div className="login-card card">
         <div className="login-header">
-          <img src="/logo.jpeg" alt="MediDoor Logo" style={{ width: '80px', height: '80px', objectFit: 'contain', marginBottom: '16px' }} />
+          <img src="/logo.png" alt="MediDoor Logo" style={{ width: '80px', height: '80px', objectFit: 'contain', marginBottom: '16px' }} />
           <h1>MediDoor Admin Panel</h1>
           <p>Sign in to manage the platform</p>
         </div>

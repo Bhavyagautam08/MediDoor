@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Alert, Modal, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Alert, Modal, Dimensions, Image } from 'react-native';
 import { ChevronLeft, User, Phone, Mail, MapPin, Calendar, Clock, ShoppingBag, ShieldCheck, ShieldAlert, Check, X, FileText, X as CloseIcon } from 'lucide-react-native';
 import { doc, getDoc, collection, query, where, getDocs, updateDoc } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
@@ -13,6 +13,7 @@ export default function UserDetailsScreen({ route, navigation }) {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewerVisible, setViewerVisible] = useState(false);
+  const [statusModal, setStatusModal] = useState({ visible: false, title: '', message: '', type: 'success' });
 
   // Mapping internal role names to friendly names and collection names
   const roleConfig = {
@@ -69,10 +70,10 @@ export default function UserDetailsScreen({ route, navigation }) {
       const docRef = doc(db, config.collection, userId);
       await updateDoc(docRef, { status });
       setUserData(prev => ({ ...prev, status }));
-      Alert.alert("Success", `${userData.name} has been ${status === 'approved' || status === 'active' ? 'approved' : 'suspended'}.`);
+      setStatusModal({ visible: true, title: 'Success', message: `${userData.name} has been ${status === 'approved' || status === 'active' ? 'approved' : 'suspended'}.`, type: 'success' });
     } catch (error) {
       console.error("Error updating status:", error);
-      Alert.alert("Error", "Could not update status.");
+      setStatusModal({ visible: true, title: 'Error', message: 'Could not update status.', type: 'error' });
     }
   };
 
@@ -128,8 +129,15 @@ export default function UserDetailsScreen({ route, navigation }) {
         {/* Profile Card */}
         <View style={styles.profileCard}>
           <View style={styles.profileHeader}>
-            <View style={[styles.avatar, { backgroundColor: `${config.color}20` }]}>
-              <IconComponent color={config.color} size={32} />
+            <View style={[styles.avatar, { backgroundColor: `${config.color}20`, overflow: 'hidden' }]}>
+              {(userData.profileImage || userData.profilePhoto || userData.photoUrl || userData.documents?.photo) ? (
+                <Image 
+                  source={{ uri: userData.profileImage || userData.profilePhoto || userData.photoUrl || userData.documents?.photo }} 
+                  style={{ width: '100%', height: '100%' }} 
+                />
+              ) : (
+                <IconComponent color={config.color} size={32} />
+              )}
             </View>
             <View style={styles.profileTitleRow}>
               <Text style={styles.profileName}>{userData.name || 'Unnamed'}</Text>
@@ -144,6 +152,13 @@ export default function UserDetailsScreen({ route, navigation }) {
           </View>
 
           <View style={styles.divider} />
+
+          {userData.ownerName && (
+            <View style={styles.infoRow}>
+              <User color="#64748B" size={16} style={styles.infoIcon} />
+              <Text style={styles.infoText}>Owner: {userData.ownerName}</Text>
+            </View>
+          )}
 
           <View style={styles.infoRow}>
             <Phone color="#64748B" size={16} style={styles.infoIcon} />
@@ -194,20 +209,27 @@ export default function UserDetailsScreen({ route, navigation }) {
             <Text style={styles.emptyOrdersText}>No orders found for this user.</Text>
           </View>
         ) : (
-          orders.map((order, idx) => (
-            <View key={idx} style={styles.orderCard}>
-              <View style={styles.orderHeader}>
-                <Text style={styles.orderId}>Order #{order.id.slice(-6).toUpperCase()}</Text>
-                <Text style={styles.orderDate}>{new Date(order.createdAt).toLocaleDateString()}</Text>
-              </View>
-              <View style={styles.orderBody}>
-                <Text style={styles.orderAmount}>₹{order.totalAmount}</Text>
-                <View style={styles.orderStatusBadge}>
-                  <Text style={styles.orderStatusText}>{order.status || 'Active'}</Text>
+          orders.map((order, idx) => {
+            const displayId = order.numericId || order.medidoorId || order.id.slice(-8).toUpperCase();
+            return (
+              <TouchableOpacity 
+                key={idx} 
+                style={styles.orderCard} 
+                onPress={() => navigation.navigate('MainTabs', { screen: 'Orders', params: { searchQuery: displayId.toLowerCase() } })}
+              >
+                <View style={styles.orderHeader}>
+                  <Text style={styles.orderId}>Order #{displayId}</Text>
+                  <Text style={styles.orderDate}>{new Date(order.createdAt).toLocaleDateString()}</Text>
                 </View>
-              </View>
-            </View>
-          ))
+                <View style={styles.orderBody}>
+                  <Text style={styles.orderAmount}>₹{order.totalAmount}</Text>
+                  <View style={styles.orderStatusBadge}>
+                    <Text style={styles.orderStatusText}>{order.status || 'Active'}</Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            );
+          })
         )}
 
         <View style={{ height: 40 }} />
@@ -235,6 +257,25 @@ export default function UserDetailsScreen({ route, navigation }) {
                 )}
               />
             )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Custom Status Modal */}
+      <Modal visible={statusModal.visible} transparent={true} animationType="fade">
+        <View style={styles.statusModalOverlay}>
+          <View style={styles.statusModalCard}>
+            <View style={[styles.statusModalIconWrapper, { backgroundColor: statusModal.type === 'success' ? '#DCFCE7' : '#FEE2E2' }]}>
+              {statusModal.type === 'success' ? <Check color="#10B981" size={36} /> : <X color="#EF4444" size={36} />}
+            </View>
+            <Text style={styles.statusModalTitle}>{statusModal.title}</Text>
+            <Text style={styles.statusModalMessage}>{statusModal.message}</Text>
+            <TouchableOpacity 
+              style={[styles.statusModalBtn, { backgroundColor: statusModal.type === 'success' ? '#10B981' : '#EF4444' }]}
+              onPress={() => setStatusModal({ ...statusModal, visible: false })}
+            >
+              <Text style={styles.statusModalBtnText}>Continue</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -285,5 +326,12 @@ const styles = StyleSheet.create({
   modalTitle: { color: '#FFFFFF', fontSize: 18, fontWeight: '600' },
   closeBtn: { padding: 8 },
   indicatorContainer: { position: 'absolute', top: 20, left: 0, right: 0, alignItems: 'center', zIndex: 99 },
-  indicatorText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold', backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 }
+  indicatorText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold', backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
+  statusModalOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  statusModalCard: { width: '100%', backgroundColor: '#FFFFFF', borderRadius: 24, padding: 32, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.1, shadowRadius: 20, elevation: 10 },
+  statusModalIconWrapper: { width: 80, height: 80, borderRadius: 40, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
+  statusModalTitle: { fontSize: 24, fontWeight: '800', color: '#0F172A', marginBottom: 8 },
+  statusModalMessage: { fontSize: 16, color: '#64748B', textAlign: 'center', marginBottom: 32, lineHeight: 24 },
+  statusModalBtn: { width: '100%', paddingVertical: 16, borderRadius: 16, alignItems: 'center' },
+  statusModalBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' }
 });

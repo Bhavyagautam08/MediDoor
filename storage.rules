@@ -1,0 +1,47 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Helper: is the request from a signed-in user?
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Pharmacy license documents — any authenticated user can upload/read (needed during signup)
+    match /pharmacy_licenses/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.resource.size < 10 * 1024 * 1024; // max 10MB
+    }
+
+    // Delivery agent verification documents — any authenticated user can upload/read
+    match /delivery_documents/{folder}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.resource.size < 10 * 1024 * 1024;
+    }
+
+    // Prescription images uploaded by customers
+    match /prescriptions/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.resource.size < 10 * 1024 * 1024;
+    }
+
+    // Advertisement banner images uploaded by admins
+    match /advertisements/{fileName} {
+      allow read: if true; // Public — shown in customer app
+      allow write: if isAuthenticated();
+    }
+
+    // Medicine images uploaded by pharmacy partners
+    match /medicine_images/{fileName} {
+      allow read: if true; // Public
+      allow write: if isAuthenticated() && request.resource.size < 5 * 1024 * 1024;
+    }
+
+    // Catch-all: any authenticated user can read/write anything else
+    match /{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+  }
+}
