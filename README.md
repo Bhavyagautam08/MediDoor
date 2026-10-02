@@ -1,16 +1,36 @@
-# React + Vite
+# MediDoor
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+MediDoor contains a React/Vite web admin, two Expo apps, Firebase Cloud
+Functions, and a static marketing site.
 
-Currently, two official plugins are available:
+## Local configuration
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Copy each `.env.example` to `.env` (or `.env.local` where appropriate) and
+fill in values from the Firebase project and service providers. Do not commit
+environment files, `google-services.json`, or built APKs.
 
-## React Compiler
+- Root web admin: copy `.env.example` to `.env.local`.
+- Customer/pharmacy/delivery app: copy `medidoor_users_app/.env.example` to
+  `medidoor_users_app/.env`.
+- Mobile admin app: copy `medidoor_admin_app/.env.example` to
+  `medidoor_admin_app/.env`.
+- Cloud Functions: copy `functions/.env.example` to `functions/.env` for local
+  development. Configure production payment secrets with Firebase Secret
+  Manager rather than committing them.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Firebase client configuration is included in web/mobile bundles at build time;
+restrict Firebase and Google Maps API keys to the required apps and APIs.
 
-## Expanding the Oxlint configuration
+## Development commands
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+- Root web admin: `npm run dev`, `npm run build`, `npm run lint`
+- Customer app: from `medidoor_users_app`, run `npm start`
+- Mobile admin: from `medidoor_admin_app`, run `npm start`
+- Functions emulator: from `functions`, run `npm run serve`
+- Marketing site: from `medidoor-website`, run `npm run dev`
+
+## Deployment
+
+Firebase deployment configuration is in `firebase.json`. Hosting currently
+serves `medidoor_admin_app/dist`; Firestore rules and indexes, Storage rules,
+and Functions are also configured there.

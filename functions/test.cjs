@@ -2,10 +2,10 @@ const crypto = require("crypto");
 const axios = require("axios");
 
 async function testPhonePe() {
-  const PHONEPE_MERCHANT_ID = "PGTESTPAYUAT";
-  const PHONEPE_SALT_KEY = "[REDACTED]";
-  const PHONEPE_SALT_INDEX = "1";
-  const PHONEPE_UAT_URL = "https://api-preprod.phonepe.com/apis/pg-sandbox/pg/v1/pay";
+  const PHONEPE_MERCHANT_ID = process.env.PHONEPE_TEST_MERCHANT_ID;
+  const PHONEPE_SALT_KEY = process.env.PHONEPE_TEST_SALT_KEY;
+  const PHONEPE_SALT_INDEX = process.env.PHONEPE_TEST_SALT_INDEX;
+  const PHONEPE_UAT_URL = process.env.PHONEPE_TEST_UAT_URL;
 
   const orderId = "1234567890";
   const userId = "testUser123";

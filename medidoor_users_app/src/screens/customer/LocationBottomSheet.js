@@ -9,7 +9,7 @@ import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplet
 import { Navigation, House, Briefcase, Search, Crosshair, X, CheckCircle, ChevronRight, ArrowLeft, MapPin } from 'lucide-react-native';
 
 const { height, width } = Dimensions.get('window');
-const GOOGLE_MAPS_KEY = '[REDACTED]';
+const GOOGLE_MAPS_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_PLACES_API_KEY;
 
 export default function LocationBottomSheet({ 
   visible, 

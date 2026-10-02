@@ -273,10 +273,10 @@ exports.monthlyRefillCron = onSchedule("0 9 * * *", async (event) => {
 });
 
 // 3. PhonePe Integration
-const PHONEPE_MERCHANT_ID = "PGTESTPAYUAT86";
-const PHONEPE_SALT_KEY = "[REDACTED]";
-const PHONEPE_SALT_INDEX = "1";
-const PHONEPE_UAT_URL = "https://api-preprod.phonepe.com/apis/pg-sandbox/pg/v1/pay";
+const PHONEPE_MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID;
+const PHONEPE_SALT_KEY = process.env.PHONEPE_SALT_KEY;
+const PHONEPE_SALT_INDEX = process.env.PHONEPE_SALT_INDEX;
+const PHONEPE_UAT_URL = process.env.PHONEPE_UAT_URL;
 
 exports.initPhonePeOrder = onRequest({ invoker: 'public', cors: true }, async (req, res) => {
   const data = req.body.data || req.body;

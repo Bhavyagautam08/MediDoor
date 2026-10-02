@@ -5,14 +5,14 @@ import { getStorage } from 'firebase/storage';
 import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
 
 const firebaseConfig = {
-  apiKey: "[REDACTED]",
-  authDomain: "medidoor-f8af9.firebaseapp.com",
-  databaseURL: "https://medidoor-f8af9-default-rtdb.firebaseio.com",
-  projectId: "medidoor-f8af9",
-  storageBucket: "medidoor-f8af9.firebasestorage.app",
-  messagingSenderId: "124078476328",
-  appId: "1:124078476328:web:a48af81635045ea7d6791d",
-  measurementId: "G-2C34P8K81Z"
+  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  databaseURL: process.env.EXPO_PUBLIC_FIREBASE_DATABASE_URL,
+  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID
 };
 
 export const app = initializeApp(firebaseConfig);
