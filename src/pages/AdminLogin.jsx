@@ -18,7 +18,11 @@ const AdminLogin = () => {
     
     // MOCK LOGIN LOGIC
     setTimeout(() => {
-      if (email === 'admin@medidoor.com' && password === '[REDACTED]') {
+      if (
+        import.meta.env.DEV &&
+        email === import.meta.env.VITE_DEMO_ADMIN_EMAIL &&
+        password === import.meta.env.VITE_DEMO_ADMIN_PASSWORD
+      ) {
         navigate('/dashboard');
       } else {
         setError('Access Denied. Invalid credentials or not an admin.');

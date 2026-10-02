@@ -6,8 +6,8 @@ import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebaseConfig';
 
 export default function LoginScreen() {
-  const [email, setEmail] = useState('admin@medidoor.com');
-  const [password, setPassword] = useState('[REDACTED]');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {

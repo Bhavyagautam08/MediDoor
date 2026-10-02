@@ -15,11 +15,32 @@ environment files, `google-services.json`, or built APKs.
 - Mobile admin app: copy `medidoor_admin_app/.env.example` to
   `medidoor_admin_app/.env`.
 - Cloud Functions: copy `functions/.env.example` to `functions/.env` for local
-  development. Configure production payment secrets with Firebase Secret
-  Manager rather than committing them.
+  development. Run the payment test with `node --env-file=.env test.cjs` from
+  the `functions` directory. Configure production payment secrets with
+  Firebase Secret Manager rather than committing them.
 
-Firebase client configuration is included in web/mobile bundles at build time;
-restrict Firebase and Google Maps API keys to the required apps and APIs.
+All values in the example files are intentionally fake placeholders and will
+not authenticate to any service. Replace them only in ignored local
+environment files or deployment secret settings. Firebase client configuration
+and `EXPO_PUBLIC_*` values are embedded in app builds; they are identifiers,
+not secret storage. Restrict client API keys and enforce access with Firebase
+Security Rules.
+
+The mobile admin currently creates an Auth account after a failed sign-in and
+then writes a `platformAdmins` profile. The Firestore rules also permit
+authenticated users to write their own `platformAdmins` document. Replace this
+development/demo provisioning flow with trusted admin provisioning and
+restrict the corresponding rules before production use.
+
+The OTP Cloud Functions currently read their provider settings from Firestore
+document `settings/otp_config`, not from environment variables. The expected
+fields are shown as a commented example in `functions/.env.example`; configure
+real values securely and restrict who can read or update that document.
+
+The browser admin's mock login uses the `VITE_DEMO_ADMIN_*` values only during
+Vite development; it is not an authentication mechanism and must not be used
+as production access control. The mobile admin login does not prefill a
+username or password.
 
 ## Development commands
 
